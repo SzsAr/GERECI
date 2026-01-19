@@ -1,0 +1,26 @@
+from pydantic import BaseModel,  Field
+from typing import Optional
+
+class UserBase(BaseModel):
+    nombre: str = Field(min_length=3, max_length=80)
+    id_rol: int
+    documento: str = Field(min_length=8, max_length=20)
+    username: str = Field(min_length=3, max_length=50)
+    firma: Optional[str] = Field(default=None, max_length=5000)
+    estado: bool
+
+class UserCreate(UserBase):
+    pass_hash: str = Field(min_length=8)
+
+class UserUpdate(BaseModel):
+    nombre: Optional[str] = Field(default=None, min_length=3, max_length=80)
+    documento: Optional[str] = Field(default=None, min_length=8, max_length=20)
+    username: Optional[str] = Field(default=None, min_length=3, max_length=50)
+    firma: Optional[str] = Field(default=None, max_length=5000)
+    pass_hash: Optional[str] = Field(default=None, min_length=8)
+
+class UserEstado(BaseModel):
+    estado: Optional[bool] = None
+
+class UserOut(UserBase):
+    id_usuario: int
