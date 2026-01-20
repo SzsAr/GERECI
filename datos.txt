@@ -632,36 +632,7 @@ def verify_token(token: str):
   "pass_hash": "12345678"
 }
 
-
-## 10. Proteger los endpoints 
-
-# modificar router/user
-
-
-@router.post("/create", status_code=status.HTTP_201_CREATED)
-def create_user(
-    user: UserCreate,
-    db: Session = Depends(get_db),
-    user_token: UserOut = Depends(get_current_user)
-):
-    print("id de rol ", user_token.id_rol, " su tipo ", type(user_token.id_rol))
-    
-    if user_token.id_rol == 2:
-        if user.id_rol == 1 or user.id_rol == 2:
-            raise HTTPException(status_code=401, detail="Usuario no autorizado")
-
-    if user_token.id_rol == 3:
-        raise HTTPException(status_code=401, detail="Usuario no autorizado")
-    
-    try:
-        user_validate = crud_users.get_user_by_email(db, user.correo)
-        if user_validate:
-            raise HTTPException(status_code=400, detail="Correo ya registrado")
-        
-        crud_users.create_user(db, user)
-        return {"message": "Usuario creado correctamente"}
-    except SQLAlchemyError as e:
-        raise HTTPException(status_code=500, detail=str(e))
+  
 
 
 ## obtener todos los usuarios de un centro

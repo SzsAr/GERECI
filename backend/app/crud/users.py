@@ -92,3 +92,50 @@ def update_user(db: Session, user_id: int, user_update: UserUpdate) -> bool:
         db.rollback()
         logger.error(f"Error al actualizar usuario: {e}")
         raise Exception("Error de base de datos al actualizar el usuario")
+
+
+def get_all_users(db: Session):
+    """Obtener todos los usuarios de la base de datos"""
+    try:
+        query = text("""
+            SELECT 
+                id AS id_usuario,
+                nombre,
+                documento,
+                username,
+                id_rol,
+                firma,
+                estado
+            FROM usuarios
+            ORDER BY nombre ASC
+        """)
+        result = db.execute(query).mappings().all()
+        return result
+    except Exception as e:
+        logger.error(f"Error al obtener usuarios: {e}")
+        raise Exception("Error de base de datos al obtener usuarios")
+
+
+def inactivate_user(db: Session, user_id: int) -> bool:
+    """Alternar el estado de un usuario (activo <-> inactivo)"""
+    try:
+        # Primero obtener el estado actual
+        query_select = text("SELECT estado FROM usuarios WHERE id = :user_id")
+        result_select = db.execute(query_select, {"user_id": user_id}).fetchone()
+        
+        if not result_select:
+            return False
+        
+        # Alternar el estado
+        current_estado = result_select[0]
+        new_estado = not current_estado
+        
+        # Actualizar con el nuevo estado
+        query_update = text("UPDATE usuarios SET estado = :estado WHERE id = :user_id")
+        result = db.execute(query_update, {"estado": new_estado, "user_id": user_id})
+        db.commit()
+        return result.rowcount > 0
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error al alternar estado del usuario: {e}")
+        raise Exception("Error de base de datos al alternar estado del usuario")

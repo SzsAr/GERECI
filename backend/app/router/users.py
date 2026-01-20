@@ -1,13 +1,14 @@
 
+from typing import List, Annotated
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
-from typing import Annotated
 from pathlib import Path
 import uuid
 from core.database import get_db
 from app.schemas.users import UserCreate, UserUpdate, UserOut
 from app.crud import users as crud_users
+from app.crud.permisos import verify_permissions
 from app.api.dependencies import get_current_user
 
 # Directorio para guardar firmas
@@ -19,6 +20,7 @@ ALLOWED_MIMETYPES = {"image/png", "image/webp", "image/jpeg"}
 MAX_FILE_SIZE = 100 * 1024  # 100 KB
 
 router = APIRouter()
+modulo = 1  # Módulo 1: Usuarios
 
 @router.post("/create", status_code=status.HTTP_201_CREATED)
 def create_user(
@@ -26,33 +28,50 @@ def create_user(
     db: Session = Depends(get_db),
     user_token: Annotated[UserOut, Depends(get_current_user)] = None
 ):
-    print("id de rol ", user_token.id_rol, " su tipo ", type(user_token.id_rol))
-
-    # Solo superadmin (rol 1) puede crear usuarios
-    if user_token.id_rol != 1:
-        raise HTTPException(
-            status_code=403,
-            detail="Permiso denegado: solo el rol SuperAdmin (1) puede crear usuarios"
-        )
-    
+    """Crear nuevo usuario - requiere permiso de insertar en módulo Usuarios"""
     try:
+        id_rol = user_token.id_rol
+        
+        # Verificar permisos
+        if not verify_permissions(db, id_rol, modulo, 'insertar'):
+            raise HTTPException(
+                status_code=403, 
+                detail='Usuario no autorizado para crear usuarios'
+            )
+        
         crud_users.create_user(db, user)
         return {"message": "Usuario creado correctamente"}
+    
+    except HTTPException:
+        raise
     except SQLAlchemyError as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/", status_code=status.HTTP_200_OK)
+@router.get("/", status_code=status.HTTP_200_OK, response_model=UserOut)
 def get_user(
     username: str, 
     db: Session = Depends(get_db),
     user_token: Annotated[UserOut, Depends(get_current_user)] = None
 ):
-    """Obtener usuario por username (requiere autenticación)"""
+    """Obtener usuario por username - requiere permiso de seleccionar en módulo Usuarios"""
     try:
+        id_rol = user_token.id_rol
+        
+        # Si es el mismo usuario, no necesita verificar permisos
+        if username != user_token.username:
+            # Verificar permisos
+            if not verify_permissions(db, id_rol, modulo, 'seleccionar'):
+                raise HTTPException(
+                    status_code=403, 
+                    detail='Usuario no autorizado para ver otros usuarios'
+                )
+        
         user = crud_users.get_user_by_username(db, username)
         if not user:
             raise HTTPException(status_code=404, detail="Usuario no encontrado")
         return user
+    except HTTPException:
+        raise
     except SQLAlchemyError as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -63,12 +82,23 @@ def update_user(
     db: Session = Depends(get_db),
     user_token: Annotated[UserOut, Depends(get_current_user)] = None
 ):
-    """Actualizar usuario (requiere autenticación)"""
+    """Actualizar usuario - requiere permiso de actualizar en módulo Usuarios"""
     try:
+        id_rol = user_token.id_rol
+        
+        # Verificar permisos
+        if not verify_permissions(db, id_rol, modulo, 'actualizar'):
+            raise HTTPException(
+                status_code=403, 
+                detail='Usuario no autorizado para actualizar usuarios'
+            )
+        
         success = crud_users.update_user(db, user_id, user)
         if not success:
             raise HTTPException(status_code=400, detail="No se pudo actualizar el usuario")
         return {"message": "Usuario actualizado correctamente"}
+    except HTTPException:
+        raise
     except SQLAlchemyError as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -81,25 +111,26 @@ def upload_firma(
     user_token: Annotated[UserOut, Depends(get_current_user)] = None
 ):
     """
-    Subir firma de usuario. 
-    Solo superadmin (rol 1) puede subir firmas.
+    Subir firma de usuario - requiere permiso de actualizar en módulo Usuarios.
     Formatos permitidos: PNG, WebP, JPEG. Máximo 100 KB.
     """
-    # Solo superadmin puede subir firmas
-    if user_token.id_rol != 1:
-        raise HTTPException(
-            status_code=403,
-            detail="Permiso denegado: solo superadmin puede subir firmas"
-        )
-    
-    # Validar MIME type
-    if file.content_type not in ALLOWED_MIMETYPES:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Tipo de archivo no permitido. Formatos: {', '.join(ALLOWED_MIMETYPES)}"
-        )
-    
     try:
+        id_rol = user_token.id_rol
+        
+        # Verificar permisos
+        if not verify_permissions(db, id_rol, modulo, 'actualizar'):
+            raise HTTPException(
+                status_code=403,
+                detail="No autorizado para subir firmas"
+            )
+        
+        # Validar MIME type
+        if file.content_type not in ALLOWED_MIMETYPES:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Tipo de archivo no permitido. Formatos: {', '.join(ALLOWED_MIMETYPES)}"
+            )
+        
         # Leer contenido del archivo
         contents = file.file.read()
         
@@ -147,4 +178,56 @@ def upload_firma(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error al guardar firma: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/all", response_model=List[UserOut])
+def get_all_users(
+    db: Session = Depends(get_db),
+    user_token: Annotated[UserOut, Depends(get_current_user)] = None
+):
+    """Obtener todos los usuarios - requiere permiso de seleccionar en módulo Usuarios"""
+    try:
+        id_rol = user_token.id_rol
+        
+        # Verificar permisos
+        if not verify_permissions(db, id_rol, modulo, 'seleccionar'):
+            raise HTTPException(
+                status_code=403, 
+                detail='Usuario no autorizado para ver usuarios'
+            )
+        
+        users = crud_users.get_all_users(db)
+        return users
+    except HTTPException:
+        raise
+    except SQLAlchemyError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/{user_id}/inactivar", status_code=status.HTTP_200_OK)
+def inactivate_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    user_token: Annotated[UserOut, Depends(get_current_user)] = None
+):
+    """Alternar estado de usuario (activo -> inactivo o inactivo -> activo) - requiere permiso de actualizar"""
+    try:
+        id_rol = user_token.id_rol
+        
+        # Verificar permisos
+        if not verify_permissions(db, id_rol, modulo, 'actualizar'):
+            raise HTTPException(
+                status_code=403, 
+                detail='Usuario no autorizado para cambiar estado de usuarios'
+            )
+        
+        success = crud_users.inactivate_user(db, user_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Usuario no encontrado")
+        
+        return {"message": "Estado del usuario alternado correctamente"}
+    except HTTPException:
+        raise
+    except SQLAlchemyError as e:
+        raise HTTPException(status_code=500, detail=str(e))

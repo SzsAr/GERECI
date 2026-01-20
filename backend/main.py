@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
-from app.router import users
+from app.router import users, tipos_documentos, plantillas, control_consecutivos
 from app.api import auth
 
 app = FastAPI()
@@ -11,6 +11,9 @@ app = FastAPI()
 # Incluir en el objeto app los routers
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
 app.include_router(users.router, prefix="/users", tags=["users"])
+app.include_router(tipos_documentos.router, prefix="/tipos-documentos", tags=["tipos-documentos"])
+app.include_router(plantillas.router, prefix="/plantillas", tags=["plantillas"])
+app.include_router(control_consecutivos.router, prefix="/control-consecutivos", tags=["control-consecutivos"])
 
 # Servir archivos estáticos (firmas, etc.)
 static_dir = Path(__file__).parent / "media"
