@@ -20,7 +20,7 @@ ALLOWED_MIMETYPES = {"image/png", "image/webp", "image/jpeg"}
 MAX_FILE_SIZE = 100 * 1024  # 100 KB
 
 router = APIRouter()
-modulo = 1  # Módulo 1: Usuarios
+modulo = 4  # Módulo 4: usuarios (según tabla modulos)
 
 @router.post("/create", status_code=status.HTTP_201_CREATED)
 def create_user(
