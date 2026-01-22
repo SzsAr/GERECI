@@ -9,20 +9,21 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def create_plantilla(db: Session, id_tipo: int, nombre: str, nombre_archivo: str, ruta_almacenamiento: Optional[str]) -> Optional[int]:
+def create_plantilla(db: Session, id_tipo: int, nombre: str, nombre_archivo: str, ruta_almacenamiento: Optional[str], campos_json: Optional[dict]) -> Optional[int]:
     """Crear una plantilla"""
     try:
         query = text(
             """
-            INSERT INTO plantillas (id_tipo, nombre, nombre_archivo, ruta_almacenamiento)
-            VALUES (:id_tipo, :nombre, :nombre_archivo, :ruta_almacenamiento)
+            INSERT INTO plantillas (id_tipo, nombre, nombre_archivo, ruta_almacenamiento, campos_json)
+            VALUES (:id_tipo, :nombre, :nombre_archivo, :ruta_almacenamiento, :campos_json)
             """
         )
         result = db.execute(query, {
             "id_tipo": id_tipo,
             "nombre": nombre,
             "nombre_archivo": nombre_archivo,
-            "ruta_almacenamiento": ruta_almacenamiento
+            "ruta_almacenamiento": ruta_almacenamiento,
+            "campos_json": campos_json
         })
         db.commit()
         return result.lastrowid
@@ -37,7 +38,7 @@ def get_plantilla_by_id(db: Session, plantilla_id: int):
     try:
         query = text(
             """
-            SELECT id, id_tipo, nombre, nombre_archivo, ruta_almacenamiento
+            SELECT id, id_tipo, nombre, nombre_archivo, ruta_almacenamiento, campos_json
             FROM plantillas
             WHERE id = :id
             """
@@ -54,9 +55,9 @@ def get_all_plantillas(db: Session) -> List:
     try:
         query = text(
             """
-            SELECT id, id_tipo, nombre, nombre_archivo, ruta_almacenamiento
+            SELECT id, id_tipo, nombre, nombre_archivo, ruta_almacenamiento, campos_json
             FROM plantillas
-            ORDER BY nombre ASC
+            ORDER BY id ASC
             """
         )
         result = db.execute(query).mappings().all()
@@ -66,7 +67,7 @@ def get_all_plantillas(db: Session) -> List:
         raise Exception("Error de base de datos al obtener plantillas")
 
 
-def update_plantilla(db: Session, plantilla_id: int, id_tipo: Optional[int] = None, nombre: Optional[str] = None, nombre_archivo: Optional[str] = None, ruta_almacenamiento: Optional[str] = None) -> bool:
+def update_plantilla(db: Session, plantilla_id: int, id_tipo: Optional[int] = None, nombre: Optional[str] = None, nombre_archivo: Optional[str] = None, ruta_almacenamiento: Optional[str] = None, campos_json: Optional[dict] = None) -> bool:
     """Actualizar una plantilla"""
     try:
         updates = {}
@@ -78,6 +79,8 @@ def update_plantilla(db: Session, plantilla_id: int, id_tipo: Optional[int] = No
             updates["nombre_archivo"] = nombre_archivo
         if ruta_almacenamiento is not None:
             updates["ruta_almacenamiento"] = ruta_almacenamiento
+        if campos_json is not None:
+            updates["campos_json"] = campos_json
 
         if not updates:
             return False

@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 from pathlib import Path
+import json
 import uuid
 
 from core.database import get_db
@@ -22,10 +23,9 @@ modulo = 9  # Módulo 9: plantillas
 PLANTILLAS_DIR = Path(__file__).parent.parent.parent / "media" / "plantillas"
 PLANTILLAS_DIR.mkdir(parents=True, exist_ok=True)
 
-# Tipos MIME permitidos para plantillas
+# Tipos MIME permitidos para plantillas (solo .docx)
 ALLOWED_MIMETYPES = {
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",  # .docx
-    "application/msword",  # .doc (por compatibilidad)
 }
 MAX_FILE_SIZE = 5 * 1024 * 1024  # 5 MB
 
@@ -35,6 +35,7 @@ def create_plantilla(
     id_tipo: int,
     nombre: str,
     nombre_archivo: str = None,
+    campos_json: str = None,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     user_token: Annotated[UserOut, Depends(get_current_user)] = None
@@ -49,7 +50,7 @@ def create_plantilla(
         if file.content_type not in ALLOWED_MIMETYPES:
             raise HTTPException(
                 status_code=400,
-                detail="Tipo de archivo no permitido. Solo se aceptan .docx/.doc"
+                detail="Tipo de archivo no permitido. Solo se aceptan archivos .docx (Word 2007+)"
             )
 
         contents = file.file.read()
@@ -72,18 +73,28 @@ def create_plantilla(
 
         ruta_publica = f"/static/plantillas/{filename}"
 
+        # Parsear campos_json si viene como string
+        campos_dict = None
+        if campos_json:
+            try:
+                campos_dict = json.loads(campos_json)
+            except json.JSONDecodeError:
+                raise HTTPException(status_code=400, detail="campos_json no es un JSON válido")
+
         plantilla_id = crud_plantillas.create_plantilla(
             db,
             id_tipo,
             nombre,
             nombre_archivo,
             ruta_publica,
+            campos_dict,
         )
         return {
             "message": "Plantilla creada correctamente",
             "id": plantilla_id,
             "nombre_archivo": nombre_archivo,
             "ruta": ruta_publica,
+            "campos_json": campos_dict,
         }
     except HTTPException:
         raise
@@ -139,6 +150,7 @@ def update_plantilla(
     id_tipo: int = None,
     nombre: str = None,
     nombre_archivo: str = None,
+    campos_json: str = None,
     file: UploadFile = File(None),
     db: Session = Depends(get_db),
     user_token: Annotated[UserOut, Depends(get_current_user)] = None
@@ -154,6 +166,7 @@ def update_plantilla(
             raise HTTPException(status_code=404, detail="Plantilla no encontrada")
 
         ruta_almacenamiento = plantilla_db.ruta_almacenamiento
+        campos_dict = None
 
         # Si se proporciona archivo, procesarlo
         if file and file.filename:
@@ -161,7 +174,7 @@ def update_plantilla(
             if file.content_type not in ALLOWED_MIMETYPES:
                 raise HTTPException(
                     status_code=400,
-                    detail="Tipo de archivo no permitido. Solo se aceptan .docx/.doc"
+                    detail="Tipo de archivo no permitido. Solo se aceptan archivos .docx (Word 2007+)"
                 )
 
             contents = file.file.read()
@@ -191,6 +204,13 @@ def update_plantilla(
             if not nombre_archivo:
                 nombre_archivo = file.filename
 
+        # Parsear campos_json si viene como string
+        if campos_json:
+            try:
+                campos_dict = json.loads(campos_json)
+            except json.JSONDecodeError:
+                raise HTTPException(status_code=400, detail="campos_json no es un JSON válido")
+
         success = crud_plantillas.update_plantilla(
             db,
             plantilla_id,
@@ -198,6 +218,7 @@ def update_plantilla(
             nombre,
             nombre_archivo,
             ruta_almacenamiento,
+            campos_dict,
         )
         if not success:
             raise HTTPException(status_code=400, detail="No se pudo actualizar la plantilla")

@@ -3,13 +3,15 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
-from app.router import users, tipos_documentos, plantillas, control_consecutivos, documentos, tareas_pendientes, observaciones, firmas_digitales
+from app.router import users, tipos_documentos, plantillas, control_consecutivos, documentos, tareas_pendientes, observaciones, firmas_digitales, roles, cargos
 from app.api import auth
 
 app = FastAPI()
 
 # Incluir en el objeto app los routers
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
+app.include_router(roles.router, prefix="/roles", tags=["roles"])
+app.include_router(cargos.router, prefix="/cargos", tags=["cargos"])
 app.include_router(users.router, prefix="/users", tags=["users"])
 app.include_router(tipos_documentos.router, prefix="/tipos-documentos", tags=["tipos-documentos"])
 app.include_router(plantillas.router, prefix="/plantillas", tags=["plantillas"])

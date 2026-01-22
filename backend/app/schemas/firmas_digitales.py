@@ -15,3 +15,13 @@ class FirmaDigitalOut(BaseModel):
     id_usuario: int
     id_documento: int
     fecha_firma: datetime
+
+
+class FirmaDigitalCompleta(BaseModel):
+    """Schema con información completa de la firma incluyendo nombre y cargo"""
+    id: int
+    id_usuario: int
+    id_documento: int
+    fecha_firma: datetime
+    nombre_usuario: str
+    cargo: str

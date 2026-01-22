@@ -3,8 +3,9 @@ USE `GERECI`;
 
 -- 1. Primero crear TODAS las tablas SIN foreign keys
 CREATE TABLE IF NOT EXISTS `roles` (
-    `id` TINYINT NOT NULL UNIQUE,
+    `id` TINYINT NOT NULL AUTO_INCREMENT UNIQUE,
     `nombre` VARCHAR(30),
+    `estado` TINYINT DEFAULT 1,
     PRIMARY KEY(`id`)
 );
 

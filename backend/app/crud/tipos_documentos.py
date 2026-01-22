@@ -50,7 +50,7 @@ def get_all_tipos_documentos(db: Session) -> List:
         query = text("""
             SELECT id, nombre, codigo, requiere_juridica
             FROM tipos_documentos
-            ORDER BY nombre ASC
+            ORDER BY id ASC
         """)
         result = db.execute(query).mappings().all()
         return result

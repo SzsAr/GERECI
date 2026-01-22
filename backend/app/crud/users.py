@@ -14,10 +14,10 @@ def create_user(db: Session, user: UserCreate) -> Optional[bool]:
         query = text("""
             INSERT INTO usuarios (
                 nombre, documento, username, id_rol,
-                pass_hash, firma, estado
+                id_cargo, pass_hash, firma, estado
             ) VALUES (
                 :nombre, :documento, :username, :id_rol,
-                :pass_hash, :firma, :estado
+                :id_cargo, :pass_hash, :firma, :estado
             )
         """)
         params = user.model_dump()
@@ -35,16 +35,21 @@ def get_user_by_username(db: Session, username: str):
     try:
         query = text("""
             SELECT 
-                id AS id_usuario,
-                nombre,
-                documento,
-                username,
-                id_rol,
-                pass_hash,
-                firma,
-                estado
-            FROM usuarios 
-            WHERE username = :username
+                u.id AS id_usuario,
+                u.nombre,
+                u.documento,
+                u.username,
+                u.id_rol,
+                r.nombre AS rol_nombre,
+                u.id_cargo,
+                c.nombre AS cargo_nombre,
+                u.pass_hash,
+                u.firma,
+                u.estado
+            FROM usuarios u
+            LEFT JOIN roles r ON u.id_rol = r.id
+            LEFT JOIN cargos c ON u.id_cargo = c.id
+            WHERE u.username = :username
         """)
         result = db.execute(query, {"username": username}).mappings().first()
         return result
@@ -56,16 +61,21 @@ def get_user_by_id(db: Session, user_id: int):
     try:
         query = text("""
             SELECT 
-                id AS id_usuario,
-                nombre,
-                documento,
-                username,
-                id_rol,
-                pass_hash,
-                firma,
-                estado
-            FROM usuarios 
-            WHERE id = :user_id
+                u.id AS id_usuario,
+                u.nombre,
+                u.documento,
+                u.username,
+                u.id_rol,
+                r.nombre AS rol_nombre,
+                u.id_cargo,
+                c.nombre AS cargo_nombre,
+                u.pass_hash,
+                u.firma,
+                u.estado
+            FROM usuarios u
+            LEFT JOIN roles r ON u.id_rol = r.id
+            LEFT JOIN cargos c ON u.id_cargo = c.id
+            WHERE u.id = :user_id
         """)
         result = db.execute(query, {"user_id": user_id}).mappings().first()
         return result
@@ -99,15 +109,20 @@ def get_all_users(db: Session):
     try:
         query = text("""
             SELECT 
-                id AS id_usuario,
-                nombre,
-                documento,
-                username,
-                id_rol,
-                firma,
-                estado
-            FROM usuarios
-            ORDER BY nombre ASC
+                u.id AS id_usuario,
+                u.nombre,
+                u.documento,
+                u.username,
+                u.id_rol,
+                r.nombre AS rol_nombre,
+                u.id_cargo,
+                c.nombre AS cargo_nombre,
+                u.firma,
+                u.estado
+            FROM usuarios u
+            LEFT JOIN roles r ON u.id_rol = r.id
+            LEFT JOIN cargos c ON u.id_cargo = c.id
+            ORDER BY u.id ASC
         """)
         result = db.execute(query).mappings().all()
         return result
@@ -139,3 +154,16 @@ def inactivate_user(db: Session, user_id: int) -> bool:
         db.rollback()
         logger.error(f"Error al alternar estado del usuario: {e}")
         raise Exception("Error de base de datos al alternar estado del usuario")
+
+
+def delete_user(db: Session, user_id: int) -> bool:
+    """Eliminar usuario por ID."""
+    try:
+        query = text("DELETE FROM usuarios WHERE id = :user_id")
+        result = db.execute(query, {"user_id": user_id})
+        db.commit()
+        return result.rowcount > 0
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error al eliminar usuario: {e}")
+        raise Exception("Error de base de datos al eliminar el usuario")

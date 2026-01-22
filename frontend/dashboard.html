@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GERECI - Dashboard</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
+  <link rel="stylesheet" href="./css/custom.css">
+</head>
+<body class="bg-light">
+  <div id="app-navbar"></div>
+
+  <div class="container-fluid">
+    <div class="row">
+      <aside class="col-md-2 col-lg-2 bg-white border-end min-vh-100 p-0">
+        <div id="app-sidebar"></div>
+      </aside>
+
+      <main class="col-md-10 col-lg-10 p-4">
+        <div class="row g-3" id="cards-summary">
+          <div class="col-md-3">
+            <div class="card shadow-sm border-0">
+              <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                  <div>
+                    <p class="text-muted small mb-1">Documentos</p>
+                    <h5 class="mb-0" id="kpi-documentos">--</h5>
+                  </div>
+                  <div class="text-primary"><i class="bi bi-file-earmark-text fs-3"></i></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="card shadow-sm border-0">
+              <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                  <div>
+                    <p class="text-muted small mb-1">Pendientes de firma</p>
+                    <h5 class="mb-0" id="kpi-firmas">--</h5>
+                  </div>
+                  <div class="text-success"><i class="bi bi-pencil-square fs-3"></i></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="card shadow-sm border-0">
+              <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                  <div>
+                    <p class="text-muted small mb-1">Tareas del área</p>
+                    <h5 class="mb-0" id="kpi-tareas">--</h5>
+                  </div>
+                  <div class="text-warning"><i class="bi bi-list-check fs-3"></i></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="card shadow-sm border-0">
+              <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                  <div>
+                    <p class="text-muted small mb-1">Observaciones</p>
+                    <h5 class="mb-0" id="kpi-observaciones">--</h5>
+                  </div>
+                  <div class="text-danger"><i class="bi bi-chat-dots fs-3"></i></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card shadow-sm border-0 mt-4">
+          <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+              <h6 class="mb-0">Últimos documentos</h6>
+              <a href="#" class="text-primary small">Ver todos</a>
+            </div>
+            <div class="table-responsive">
+              <table class="table align-middle">
+                <thead>
+                  <tr>
+                    <th>ID</th><th>Asunto</th><th>Tipo</th><th>Estado</th><th>Fecha</th>
+                  </tr>
+                </thead>
+                <tbody id="tabla-documentos">
+                  <tr><td colspan="5" class="text-center text-muted small">Sin datos</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+    <div id="app-footer"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="./js/api.js"></script>
+    <script src="./js/layout.js"></script>
+  <script src="./js/dashboard.js"></script>
+    <script>
+      window.addEventListener('DOMContentLoaded', () => {
+        layout.renderNavbar('app-navbar');
+        layout.renderSidebar('dashboard', 'app-sidebar');
+        layout.renderFooter('app-footer');
+      });
+    </script>
+</body>
+</html>

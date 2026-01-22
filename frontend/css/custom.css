@@ -1,0 +1,52 @@
+:root {
+  --primary: #0d6efd;
+  --bg-soft: #f7f9fb;
+}
+
+body {
+  background: var(--bg-soft);
+  padding-bottom: 56px; /* space for fixed footer */
+}
+
+.sidebar {
+  min-height: calc(100vh - 56px);
+}
+
+.sidebar .list-group-item.active {
+  background-color: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+
+.card {
+  border: none;
+  border-radius: 12px;
+}
+
+.btn-primary {
+  background-color: var(--primary);
+  border-color: var(--primary);
+}
+
+.btn-primary:hover {
+  filter: brightness(0.93);
+}
+
+.footer {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  z-index: 1030; /* above content */
+}
+
+/* Admin submenu spacing */
+#admin-menu.list-group-horizontal {
+  gap: .5rem; /* extra separation between items */
+}
+#admin-menu.list-group-horizontal .list-group-item {
+  border-radius: .5rem;
+  border: 1px solid #e9ecef;
+  padding: .5rem 1rem;
+}

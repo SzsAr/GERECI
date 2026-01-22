@@ -75,6 +75,32 @@ def get_user(
     except SQLAlchemyError as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.get("/id/{user_id}", status_code=status.HTTP_200_OK, response_model=UserOut)
+def get_user_by_id_endpoint(
+    user_id: int,
+    db: Session = Depends(get_db),
+    user_token: Annotated[UserOut, Depends(get_current_user)] = None
+):
+    """Obtener usuario por ID - requiere permiso de seleccionar en módulo Usuarios"""
+    try:
+        id_rol = user_token.id_rol
+        
+        # Verificar permisos
+        if not verify_permissions(db, id_rol, modulo, 'seleccionar'):
+            raise HTTPException(
+                status_code=403, 
+                detail='Usuario no autorizado para ver usuarios'
+            )
+        
+        user = crud_users.get_user_by_id(db, user_id)
+        if not user:
+            raise HTTPException(status_code=404, detail="Usuario no encontrado")
+        return user
+    except HTTPException:
+        raise
+    except SQLAlchemyError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.put("/{user_id}", status_code=status.HTTP_200_OK)
 def update_user(
     user_id: int, 
@@ -227,6 +253,32 @@ def inactivate_user(
             raise HTTPException(status_code=404, detail="Usuario no encontrado")
         
         return {"message": "Estado del usuario alternado correctamente"}
+    except HTTPException:
+        raise
+    except SQLAlchemyError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/{user_id}", status_code=status.HTTP_200_OK)
+def delete_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    user_token: Annotated[UserOut, Depends(get_current_user)] = None
+):
+    """Eliminar usuario - requiere permiso de borrar en módulo Usuarios"""
+    try:
+        id_rol = user_token.id_rol
+
+        if not verify_permissions(db, id_rol, modulo, 'borrar'):
+            raise HTTPException(
+                status_code=403,
+                detail='Usuario no autorizado para eliminar usuarios'
+            )
+
+        success = crud_users.delete_user(db, user_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Usuario no encontrado")
+        return {"message": "Usuario eliminado correctamente"}
     except HTTPException:
         raise
     except SQLAlchemyError as e:

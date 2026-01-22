@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 
 from core.database import get_db
-from app.schemas.firmas_digitales import FirmaDigitalCreate, FirmaDigitalOut
+from app.schemas.firmas_digitales import FirmaDigitalCreate, FirmaDigitalOut, FirmaDigitalCompleta
 from app.schemas.users import UserOut
 from app.crud import firmas_digitales as crud_firmas
 from app.crud.permisos import verify_permissions
@@ -25,7 +25,8 @@ def create_firma_digital(
 ):
     """
     Registrar una firma digital en un documento.
-    Solo puede haber una firma por documento.
+    Un documento puede tener múltiples firmas.
+    Un usuario no puede firmar el mismo documento dos veces.
     Requiere permiso de insertar en módulo Firmas Digitales.
     """
     try:
@@ -89,15 +90,16 @@ def get_firma_digital(
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.get("/documento/{documento_id}", response_model=FirmaDigitalOut, 
+@router.get("/documento/{documento_id}", response_model=List[FirmaDigitalCompleta], 
             status_code=status.HTTP_200_OK)
-def get_firma_documento(
+def get_firmas_documento(
     documento_id: int,
     db: Session = Depends(get_db),
     user_token: Annotated[UserOut, Depends(get_current_user)] = None
 ):
     """
-    Obtener firma digital de un documento.
+    Obtener todas las firmas digitales de un documento con información completa.
+    Incluye nombre del usuario y cargo.
     Requiere permiso de seleccionar en módulo Firmas Digitales.
     """
     try:
@@ -110,11 +112,12 @@ def get_firma_documento(
                 detail='Usuario no autorizado para ver firmas digitales'
             )
         
-        firma = crud_firmas.get_firma_by_documento(db, documento_id)
+        firmas = crud_firmas.get_firmas_by_documento(db, documento_id)
         
-        if not firma:
-            raise HTTPException(status_code=404, detail="Este documento no tiene firma digital")
+        if not firmas:
+            return []
         
+        return firmas
         return firma
     
     except HTTPException:
@@ -187,6 +190,43 @@ def delete_firma_digital(
         crud_firmas.delete_firma_digital(db, firma_id)
         
         return {"message": "Firma digital eliminada correctamente"}
+    
+    except HTTPException:
+        raise
+    except SQLAlchemyError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/documento/{documento_id}/verificar", status_code=status.HTTP_200_OK)
+def verificar_firmas_requeridas(
+    documento_id: int,
+    db: Session = Depends(get_db),
+    user_token: Annotated[UserOut, Depends(get_current_user)] = None
+):
+    """
+    Verificar qué firmas faltan en un documento según su tipo.
+    
+    Reglas:
+    - Normativas: Requieren firma de la unidad creadora + Gerencia (2 firmas)
+    - Resoluciones: Requieren firma de la unidad + Jurídica + Gerencia (3 firmas)
+    
+    Requiere permiso de seleccionar en módulo Firmas Digitales.
+    """
+    try:
+        id_rol = user_token.id_rol
+        
+        # Verificar permisos
+        if not verify_permissions(db, id_rol, modulo, 'seleccionar'):
+            raise HTTPException(
+                status_code=403,
+                detail='Usuario no autorizado para ver firmas digitales'
+            )
+        
+        verificacion = crud_firmas.verificar_firmas_requeridas(db, documento_id)
+        
+        return verificacion
     
     except HTTPException:
         raise

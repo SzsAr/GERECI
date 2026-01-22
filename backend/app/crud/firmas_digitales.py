@@ -14,20 +14,23 @@ logger = logging.getLogger(__name__)
 def create_firma_digital(db: Session, firma: FirmaDigitalCreate) -> Optional[int]:
     """
     Registrar una firma digital.
-    Solo puede haber una firma por documento (constraint UNIQUE).
+    Un documento puede tener múltiples firmas, pero un usuario no puede firmar dos veces.
     Retorna el ID de la firma creada.
     """
     try:
-        # Verificar que el documento no esté firmado
+        # Verificar que el usuario no haya firmado ya este documento
         query_check = text("""
             SELECT id FROM firmas_digitales 
-            WHERE id_documento = :id_documento
+            WHERE id_documento = :id_documento AND id_usuario = :id_usuario
         """)
         
-        existing = db.execute(query_check, {"id_documento": firma.id_documento}).fetchone()
+        existing = db.execute(query_check, {
+            "id_documento": firma.id_documento,
+            "id_usuario": firma.id_usuario
+        }).fetchone()
         
         if existing:
-            raise Exception("Este documento ya tiene una firma digital registrada")
+            raise Exception("Este usuario ya ha firmado el documento")
         
         # Insertar firma
         query = text("""
@@ -74,25 +77,30 @@ def get_firma_by_id(db: Session, firma_id: int):
         raise Exception("Error de base de datos al obtener la firma digital")
 
 
-def get_firma_by_documento(db: Session, documento_id: int):
+def get_firmas_by_documento(db: Session, documento_id: int):
     """
-    Obtener firma digital de un documento.
-    Solo puede haber una firma por documento.
+    Obtener todas las firmas digitales de un documento con información completa.
+    Incluye nombre del usuario y cargo.
     """
     try:
         query = text("""
             SELECT 
-                id, id_usuario, id_documento, fecha_firma
-            FROM firmas_digitales 
-            WHERE id_documento = :documento_id
+                f.id, f.id_usuario, f.id_documento, f.fecha_firma,
+                u.nombre as nombre_usuario,
+                COALESCE(c.nombre, 'Sin cargo asignado') as cargo
+            FROM firmas_digitales f
+            INNER JOIN usuarios u ON f.id_usuario = u.id
+            LEFT JOIN cargos c ON u.id_cargo = c.id
+            WHERE f.id_documento = :documento_id
+            ORDER BY f.fecha_firma ASC
         """)
         
-        result = db.execute(query, {"documento_id": documento_id}).mappings().first()
-        return result
+        result = db.execute(query, {"documento_id": documento_id}).mappings().all()
+        return [dict(row) for row in result]
     
     except Exception as e:
-        logger.error(f"Error al obtener firma del documento: {e}")
-        raise Exception("Error de base de datos al obtener la firma")
+        logger.error(f"Error al obtener firmas del documento: {e}")
+        raise Exception("Error de base de datos al obtener las firmas")
 
 
 def get_firmas_by_usuario(db: Session, usuario_id: int) -> List:
@@ -130,3 +138,83 @@ def delete_firma_digital(db: Session, firma_id: int) -> bool:
         db.rollback()
         logger.error(f"Error al eliminar firma digital: {e}")
         raise Exception("Error de base de datos al eliminar la firma digital")
+
+
+def verificar_firmas_requeridas(db: Session, documento_id: int):
+    """
+    Verificar qué firmas hacen falta según el tipo de documento.
+    
+    Reglas:
+    - Normativas (requiere_juridica=0): Necesita firma de la unidad creadora y del gerente
+    - Resoluciones (requiere_juridica=1): Necesita firma de la unidad, jurídica y gerente
+    
+    Retorna información de qué firmas faltan y si el documento está listo para finalizarse.
+    """
+    try:
+        # Obtener información del documento y sus firmas actuales
+        query = text("""
+            SELECT 
+                d.id,
+                d.usuario_genera,
+                td.requiere_juridica,
+                (SELECT COUNT(*) FROM firmas_digitales WHERE id_documento = d.id) as total_firmas,
+                (SELECT COUNT(*) FROM firmas_digitales f 
+                 INNER JOIN usuarios u ON f.id_usuario = u.id 
+                 WHERE f.id_documento = d.id AND u.id_rol = 2) as firmas_gerencia,
+                (SELECT COUNT(*) FROM firmas_digitales f 
+                 INNER JOIN usuarios u ON f.id_usuario = u.id 
+                 WHERE f.id_documento = d.id AND u.id_rol = 3) as firmas_juridica,
+                (SELECT COUNT(*) FROM firmas_digitales f 
+                 WHERE f.id_documento = d.id AND f.id_usuario = d.usuario_genera) as firmas_creador
+            FROM documentos d
+            INNER JOIN tipos_documentos td ON d.id_tipo_documento = td.id
+            WHERE d.id = :documento_id
+        """)
+        
+        result = db.execute(query, {"documento_id": documento_id}).mappings().first()
+        
+        if not result:
+            raise Exception("Documento no encontrado")
+        
+        requiere_juridica = bool(result['requiere_juridica'])
+        firmas_gerencia = result['firmas_gerencia']
+        firmas_juridica = result['firmas_juridica']
+        firmas_creador = result['firmas_creador']
+        
+        firmas_faltantes = []
+        
+        # Verificar firma del creador
+        if firmas_creador == 0:
+            firmas_faltantes.append("Falta firma de la unidad creadora del documento")
+        
+        # Verificar firma de gerencia
+        if firmas_gerencia == 0:
+            firmas_faltantes.append("Falta firma de Gerencia")
+        
+        # Verificar firma de jurídica solo si el documento lo requiere
+        if requiere_juridica and firmas_juridica == 0:
+            firmas_faltantes.append("Falta firma de Jurídica")
+        
+        # Determinar si está listo
+        if requiere_juridica:
+            # Resolución: necesita las 3 firmas
+            listo = firmas_creador > 0 and firmas_gerencia > 0 and firmas_juridica > 0
+        else:
+            # Normativa: necesita 2 firmas (creador + gerencia)
+            listo = firmas_creador > 0 and firmas_gerencia > 0
+        
+        return {
+            "documento_id": documento_id,
+            "requiere_juridica": requiere_juridica,
+            "firmas_actuales": result['total_firmas'],
+            "firmas_requeridas": 3 if requiere_juridica else 2,
+            "tiene_firma_creador": firmas_creador > 0,
+            "tiene_firma_gerencia": firmas_gerencia > 0,
+            "tiene_firma_juridica": firmas_juridica > 0,
+            "firmas_faltantes": firmas_faltantes,
+            "listo_para_finalizar": listo
+        }
+    
+    except Exception as e:
+        logger.error(f"Error al verificar firmas requeridas: {e}")
+        raise Exception(str(e))

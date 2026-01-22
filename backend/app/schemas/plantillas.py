@@ -2,7 +2,7 @@
 Pydantic schemas for plantillas
 """
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, Dict, Any
 
 
 class PlantillaCreate(BaseModel):
@@ -10,6 +10,7 @@ class PlantillaCreate(BaseModel):
     nombre: str
     nombre_archivo: str
     ruta_almacenamiento: Optional[str] = None
+    campos_json: Optional[Dict[str, Any]] = None
 
 
 class PlantillaUpdate(BaseModel):
@@ -17,6 +18,7 @@ class PlantillaUpdate(BaseModel):
     nombre: Optional[str] = None
     nombre_archivo: Optional[str] = None
     ruta_almacenamiento: Optional[str] = None
+    campos_json: Optional[Dict[str, Any]] = None
 
 
 class PlantillaOut(BaseModel):
@@ -25,3 +27,4 @@ class PlantillaOut(BaseModel):
     nombre: str
     nombre_archivo: str
     ruta_almacenamiento: Optional[str] = None
+    campos_json: Optional[Dict[str, Any]] = None
