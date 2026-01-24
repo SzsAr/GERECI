@@ -24,17 +24,22 @@ async def login_for_access_token(
             headers={"WWW-Authenticate": "Bearer"},
         )
     
+    # Obtener cargo_nombre (ya viene del CRUD gracias a los JOINs)
+    cargo_nombre = user.get('cargo_nombre') if isinstance(user, dict) else getattr(user, 'cargo_nombre', None)
+    area_display = cargo_nombre or "Sin asignar"
+    
     # Mapear a un esquema ligero para auth
     user_out = UserAuthOut(
-        id_usuario=user.id_usuario,
-        nombre=user.nombre,
-        username=user.username,
-        id_rol=user.id_rol,
-        estado=user.estado,
+        id_usuario=user.get('id_usuario') if isinstance(user, dict) else user.id_usuario,
+        nombre=user.get('nombre') if isinstance(user, dict) else user.nombre,
+        username=user.get('username') if isinstance(user, dict) else user.username,
+        id_rol=user.get('id_rol') if isinstance(user, dict) else user.id_rol,
+        rol_nombre=area_display,
+        estado=user.get('estado') if isinstance(user, dict) else user.estado,
     )
     
     access_token = create_access_token(
-        data={"sub": str(user.id_usuario), "rol": user.id_rol}
+        data={"sub": str(user.get('id_usuario') if isinstance(user, dict) else user.id_usuario), "rol": user.get('id_rol') if isinstance(user, dict) else user.id_rol}
     )
 
     return ResponseLoggin(

@@ -28,3 +28,4 @@ class PlantillaOut(BaseModel):
     nombre_archivo: str
     ruta_almacenamiento: Optional[str] = None
     campos_json: Optional[Dict[str, Any]] = None
+    tipo_nombre: Optional[str] = None

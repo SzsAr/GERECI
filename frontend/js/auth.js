@@ -19,6 +19,7 @@ document.addEventListener('DOMContentLoaded', () => {
         body: formData,
       });
       localStorage.setItem('token', data.access_token);
+      localStorage.setItem('user', JSON.stringify(data.user));
       window.location.href = './dashboard.html';
     } catch (err) {
       errorBox.textContent = err.message || 'Login failed';

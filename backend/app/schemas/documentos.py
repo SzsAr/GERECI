@@ -2,7 +2,7 @@
 Pydantic schemas for documentos
 """
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, Dict, Any
 from datetime import datetime
 
 
@@ -10,6 +10,7 @@ class DocumentoCreate(BaseModel):
     id_tipo: int = Field(..., description="ID del tipo de documento")
     id_plantilla: int = Field(..., description="ID de la plantilla a usar")
     asunto: str = Field(..., min_length=3, max_length=255, description="Asunto del documento")
+    valores_campos: Optional[Dict[str, Any]] = Field(None, description="Valores para los campos de la plantilla")
 
 
 class DocumentoUpdate(BaseModel):
@@ -19,6 +20,7 @@ class DocumentoUpdate(BaseModel):
     ruta_word_generado: Optional[str] = Field(None, max_length=500)
     ruta_pdf_final: Optional[str] = Field(None, max_length=500)
     fecha_emision: Optional[datetime] = None
+    valores_campos: Optional[Dict[str, Any]] = None
 
 
 class DocumentoStateChange(BaseModel):
@@ -38,3 +40,8 @@ class DocumentoOut(BaseModel):
     ruta_word_generado: Optional[str]
     ruta_pdf_final: Optional[str]
     estado: str
+    tipo_nombre: Optional[str] = None
+    plantilla_nombre: Optional[str] = None
+    usuario_nombre: Optional[str] = None
+    
+    model_config = {"from_attributes": True}

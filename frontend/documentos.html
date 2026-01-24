@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Documentos - GERECI</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+  <style>
+    body { display: flex; flex-direction: column; min-height: 100vh; }
+    #app-navbar { flex-shrink: 0; }
+    .container-fluid { flex: 1; }
+    main { flex: 1; padding: 2rem; }
+    #app-footer { flex-shrink: 0; }
+    .badge-custom { font-size: 0.85rem; padding: 0.4rem 0.6rem; }
+    .estado-badge {
+      font-weight: 500;
+      padding: 0.5rem 0.75rem;
+      border-radius: 4px;
+    }
+    .estado-borrador { background-color: #e7e7e7; color: #333; }
+    .estado-revision { background-color: #fff3cd; color: #856404; }
+    .estado-aprobado { background-color: #d1ecf1; color: #0c5460; }
+    .estado-firmado { background-color: #d4edda; color: #155724; }
+    .estado-finalizado { background-color: #d4edda; color: #155724; font-weight: bold; }
+    .estado-devuelto { background-color: #f8d7da; color: #721c24; }
+    .table-sm { font-size: 0.9rem; }
+    .btn-sm { padding: 0.25rem 0.5rem; font-size: 0.85rem; }
+    .estado-step { margin-top: 1rem; padding: 1rem; background: #f8f9fa; border-left: 4px solid #007bff; }
+  </style>
+</head>
+<body class="bg-light">
+  <div id="app-navbar"></div>
+  
+  <div class="container-fluid">
+    <div class="row">
+      <nav class="col-md-3 col-lg-2 sidebar bg-white shadow-sm p-3" id="app-sidebar"></nav>
+      
+      <main class="col-md-9 col-lg-10">
+        <!-- Filtros -->
+        <div class="card mb-3">
+          <div class="card-body">
+            <h5 class="card-title">Filtros</h5>
+            <div class="row g-2">
+              <div class="col-md-4">
+                <select id="filtro-estado" class="form-select form-select-sm">
+                  <option value="">Todos los estados</option>
+                  <option value="BORRADOR">Borrador</option>
+                  <option value="EN_REVISION_JURIDICA">En revisión jurídica</option>
+                  <option value="EN_REVISION_GERENCIAL">En revisión gerencial</option>
+                  <option value="APROBADO_JURIDICA">Aprobado por jurídica</option>
+                  <option value="APROBADO_GERENCIA">Aprobado por gerencia</option>
+                  <option value="FIRMADO">Firmado</option>
+                  <option value="PENDIENTE_FINALIZACION">Pendiente finalización</option>
+                  <option value="FINALIZADO">Finalizado</option>
+                </select>
+              </div>
+              <div class="col-md-4">
+                <input type="text" id="filtro-asunto" class="form-control form-control-sm" placeholder="Buscar por asunto...">
+              </div>
+              <div class="col-md-2">
+                <button id="btn-filtrar" class="btn btn-sm btn-primary w-100">
+                  <i class="bi bi-search"></i> Filtrar
+                </button>
+              </div>
+              <div class="col-md-2">
+                <button id="btn-nuevo-doc" class="btn btn-sm btn-success w-100">
+                  <i class="bi bi-plus-circle"></i> Nuevo
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tabla de documentos -->
+        <div class="card">
+          <div class="table-responsive">
+            <table class="table table-sm table-hover mb-0">
+              <thead class="table-light">
+                <tr>
+                  <th style="width: 60px;">ID</th>
+                  <th>Asunto</th>
+                  <th style="width: 120px;">Tipo</th>
+                  <th style="width: 100px;">Plantilla</th>
+                  <th style="width: 120px;">Creado por</th>
+                  <th style="width: 150px;">Estado</th>
+                  <th style="width: 100px;">Consecutivo</th>
+                  <th style="width: 200px;">Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="tabla-documentos">
+                <tr><td colspan="8" class="text-muted text-center py-3">Cargando...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <div id="app-footer"></div>
+
+  <!-- Modal: Nuevo Documento -->
+  <div class="modal fade" id="modalNuevoDoc" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="modalNuevoDocTitle">Nuevo documento</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div id="nuevo-doc-error" class="alert alert-danger d-none" role="alert"></div>
+          
+          <form id="form-nuevo-doc">
+            <div class="mb-3">
+              <label class="form-label">Asunto <span class="text-danger">*</span></label>
+              <input type="text" id="nuevo-asunto" class="form-control" required>
+            </div>
+            
+            <div class="mb-3">
+              <label class="form-label">Plantilla <span class="text-danger">*</span></label>
+              <select id="nuevo-plantilla" class="form-select" required>
+                <option value="">Seleccione una plantilla...</option>
+              </select>
+              <small class="text-muted d-none" id="tipo-documento-info"></small>
+            </div>
+            
+            <div class="mb-3" id="campos-section" style="display: none;">
+              <label class="form-label">Campos del documento</label>
+              <div id="nuevo-campos-container"></div>
+            </div>
+          </form>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+          <button type="button" id="btn-generar-doc" class="btn btn-primary">Generar documento</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Ver/Firmar Documento -->
+  <div class="modal fade" id="modalVerDoc" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="modalVerDocTitle">Documento</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div id="ver-doc-error" class="alert alert-danger d-none" role="alert"></div>
+          
+          <div class="row mb-3">
+            <div class="col-md-6">
+              <p><strong>ID:</strong> <span id="ver-id"></span></p>
+              <p><strong>Asunto:</strong> <span id="ver-asunto"></span></p>
+              <p><strong>Tipo:</strong> <span id="ver-tipo"></span></p>
+            </div>
+            <div class="col-md-6">
+              <p><strong>Creado:</strong> <span id="ver-fecha"></span></p>
+              <p><strong>Creado por:</strong> <span id="ver-creador"></span></p>
+              <p><strong>Estado actual:</strong> <span id="ver-estado" class="estado-badge"></span></p>
+            </div>
+          </div>
+
+          <div class="estado-step" id="ver-estado-info"></div>
+
+          <!-- Sección de campos editables (solo en BORRADOR) -->
+          <div id="section-editar-campos" class="d-none mb-3">
+            <h6>Valores de campos</h6>
+            <div id="ver-campos-container"></div>
+            <button type="button" id="btn-guardar-campos" class="btn btn-sm btn-primary mt-2">
+              <i class="bi bi-save"></i> Guardar cambios
+            </button>
+          </div>
+
+          <!-- Descargas -->
+          <div class="row g-2 mb-3">
+            <div class="col-md-6">
+              <a id="link-descargar-word" href="#" class="btn btn-sm btn-info w-100 d-none">
+                <i class="bi bi-file-word"></i> Descargar Word
+              </a>
+            </div>
+            <div class="col-md-6">
+              <a id="link-descargar-pdf" href="#" class="btn btn-sm btn-danger w-100 d-none">
+                <i class="bi bi-file-pdf"></i> Descargar PDF
+              </a>
+            </div>
+          </div>
+
+          <!-- Acciones de estado -->
+          <div id="section-acciones" class="d-none">
+            <h6>Acciones disponibles</h6>
+            <div class="btn-group w-100" role="group">
+              <button id="btn-aprobar-firmar" type="button" class="btn btn-success d-none">
+                <i class="bi bi-check-circle"></i> Aprobar y Firmar
+              </button>
+              <button id="btn-devolver" type="button" class="btn btn-warning d-none">
+                <i class="bi bi-arrow-counterclockwise"></i> Devolver
+              </button>
+            </div>
+          </div>
+
+          <!-- Modal para observaciones (devolución) -->
+          <div id="section-observaciones" class="d-none mt-3">
+            <label class="form-label">Observaciones:</label>
+            <textarea id="textarea-observaciones" class="form-control" rows="3" placeholder="Ingrese las observaciones..."></textarea>
+            <button id="btn-enviar-observaciones" type="button" class="btn btn-warning btn-sm mt-2">
+              Enviar devolución
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="./js/layout.js"></script>
+  <script src="./js/api.js"></script>
+  <script src="./js/documentos.js"></script>
+  
+  <script>
+    window.addEventListener('DOMContentLoaded', () => {
+      layout.renderNavbar();
+      layout.renderSidebar('documentos');
+      layout.renderFooter();
+      initDocumentosPage();
+    });
+  </script>
+</body>
+</html>

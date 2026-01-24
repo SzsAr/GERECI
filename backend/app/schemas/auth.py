@@ -1,4 +1,5 @@
 from pydantic import BaseModel, EmailStr
+from typing import Optional
 
 
 class UserAuthOut(BaseModel):
@@ -6,6 +7,7 @@ class UserAuthOut(BaseModel):
     nombre: str
     username: str
     id_rol: int
+    rol_nombre: Optional[str] = None
     estado: bool
 
 

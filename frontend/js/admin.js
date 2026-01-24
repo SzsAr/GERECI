@@ -3,7 +3,7 @@
   if (!token) window.location.href = './index.html';
 })();
 
-let modalRol, modalCargo, modalUsuario;
+let modalRol, modalCargo, modalUsuario, modalPlantilla;
 
 function showSection(section) {
   document.querySelectorAll('.section').forEach(s => s.classList.add('d-none'));
@@ -149,11 +149,11 @@ async function saveRol() {
 // CARGOS
 async function loadCargos() {
   const tbody = document.querySelector('#tabla-cargos tbody');
-  tbody.innerHTML = '<tr><td colspan="5" class="text-muted small">Cargando...</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="4" class="text-muted small">Cargando...</td></tr>';
   try {
     const data = await api.request('/cargos');
     if (!data || data.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="5" class="text-muted small">Sin datos</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="4" class="text-muted small">Sin datos</td></tr>';
       return;
     }
     tbody.innerHTML = data.map(c => `
@@ -344,9 +344,30 @@ function bindUserActions() {
   });
 }
 
-function loadPlantillas() {
+async function loadPlantillas() {
   const tbody = document.querySelector('#tabla-plantillas tbody');
-  tbody.innerHTML = '<tr><td colspan="6" class="text-muted small">Pendiente de implementación</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="5" class="text-muted small">Cargando...</td></tr>';
+  try {
+    const data = await api.request('/plantillas');
+    if (!data || data.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" class="text-muted small">Sin datos</td></tr>';
+      return;
+    }
+    tbody.innerHTML = data.map(p => `
+      <tr>
+        <td>${p.nombre}</td>
+        <td>${p.tipo_nombre || p.id_tipo}</td>
+        <td><a href="${p.ruta_almacenamiento ? API_BASE + p.ruta_almacenamiento : '#'}" target="_blank">${p.nombre_archivo || 'Sin archivo'}</a></td>
+        <td class="text-end">
+          <button class="btn btn-sm btn-outline-primary me-1" data-edit-plantilla="${p.id}"><i class="bi bi-pencil"></i></button>
+          <button class="btn btn-sm btn-outline-danger" data-del-plantilla="${p.id}"><i class="bi bi-trash"></i></button>
+        </td>
+      </tr>
+    `).join('');
+    bindPlantillaActions();
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="6" class="text-danger small">Error: ${err.message}</td></tr>`;
+  }
 }
 
 async function saveUsuario() {
@@ -405,6 +426,140 @@ async function loadRolesAndCargos() {
   }
 }
 
+async function loadTiposDocumentos() {
+  try {
+    const tipos = await api.request('/tipos-documentos');
+    const tipoSelect = document.getElementById('plantilla-tipo');
+    tipoSelect.innerHTML = '<option value="">Seleccione...</option>' + tipos.map(t => `<option value="${t.id}">${t.nombre}</option>`).join('');
+  } catch (err) {
+    console.error('Error cargando tipos de documentos:', err);
+  }
+}
+
+function addCampoInput(key = '') {
+  const container = document.getElementById('plantilla-campos-container');
+  const campoId = 'campo-' + Date.now();
+  const campoDiv = document.createElement('div');
+  campoDiv.className = 'row mb-2 campo-item';
+  campoDiv.id = campoId;
+  campoDiv.innerHTML = `
+    <div class="col-10">
+      <input type="text" class="form-control form-control-sm campo-key" placeholder="Nombre del campo" value="${key}">
+    </div>
+    <div class="col-2 d-flex justify-content-end">
+      <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeCampoInput('${campoId}')">
+        <i class="bi bi-trash"></i>
+      </button>
+    </div>
+  `;
+  container.appendChild(campoDiv);
+}
+
+function removeCampoInput(campoId) {
+  const campo = document.getElementById(campoId);
+  if (campo) campo.remove();
+}
+
+function clearCampos() {
+  document.getElementById('plantilla-campos-container').innerHTML = '';
+}
+
+function loadCamposFromJSON(camposJSON) {
+  clearCampos();
+  if (camposJSON && typeof camposJSON === 'object') {
+    Object.keys(camposJSON).forEach((key) => {
+      addCampoInput(key);
+    });
+  }
+}
+
+function getCamposAsJSON() {
+  const campos = {};
+  document.querySelectorAll('.campo-item').forEach(item => {
+    const key = item.querySelector('.campo-key').value.trim();
+    if (key) {
+      campos[key] = '';
+    }
+  });
+  return Object.keys(campos).length > 0 ? campos : null;
+}
+
+function bindPlantillaActions() {
+  document.querySelectorAll('[data-del-plantilla]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('¿Eliminar plantilla?')) return;
+      const id = btn.dataset.delPlantilla;
+      try {
+        await api.request(`/plantillas/${id}`, { method: 'DELETE' });
+        loadPlantillas();
+      } catch (err) {
+        alert(err.message);
+      }
+    });
+  });
+
+  document.querySelectorAll('[data-edit-plantilla]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.editPlantilla;
+      try {
+        const plantilla = await api.request(`/plantillas/${id}`);
+        document.getElementById('plantilla-id').value = plantilla.id;
+        document.getElementById('plantilla-nombre').value = plantilla.nombre;
+        document.getElementById('plantilla-tipo').value = plantilla.id_tipo;
+        loadCamposFromJSON(plantilla.campos_json);
+        document.getElementById('plantilla-file').value = '';
+        document.getElementById('modalPlantillaTitle').textContent = 'Editar plantilla';
+        document.getElementById('plantilla-error').classList.add('d-none');
+        modalPlantilla.show();
+      } catch (err) {
+        alert(`Error al cargar plantilla: ${err.message}`);
+      }
+    });
+  });
+}
+
+async function savePlantilla() {
+  const id = document.getElementById('plantilla-id').value;
+  const nombre = document.getElementById('plantilla-nombre').value.trim();
+  const id_tipo = parseInt(document.getElementById('plantilla-tipo').value);
+  const campos = getCamposAsJSON();
+  const fileInput = document.getElementById('plantilla-file');
+  const file = fileInput.files[0];
+  const errBox = document.getElementById('plantilla-error');
+  errBox.classList.add('d-none');
+
+  if (!nombre || !id_tipo) {
+    errBox.textContent = 'Nombre y tipo de documento son requeridos';
+    errBox.classList.remove('d-none');
+    return;
+  }
+
+  if (!id && !file) {
+    errBox.textContent = 'Debe seleccionar un archivo Word (.docx) al crear una plantilla';
+    errBox.classList.remove('d-none');
+    return;
+  }
+
+  try {
+    const formData = new FormData();
+    formData.append('nombre', nombre);
+    formData.append('id_tipo', id_tipo);
+    if (campos) formData.append('campos_json', JSON.stringify(campos));
+    if (file) formData.append('file', file);
+
+    if (id) {
+      await api.request(`/plantillas/${id}`, { method: 'PUT', body: formData });
+    } else {
+      await api.request('/plantillas', { method: 'POST', body: formData });
+    }
+    modalPlantilla.hide();
+    loadPlantillas();
+  } catch (err) {
+    errBox.textContent = err.message;
+    errBox.classList.remove('d-none');
+  }
+}
+
 window.addEventListener('DOMContentLoaded', () => {
   bindMenu();
   bindLogout();
@@ -412,8 +567,10 @@ window.addEventListener('DOMContentLoaded', () => {
   modalRol = new bootstrap.Modal(document.getElementById('modalRol'));
   modalCargo = new bootstrap.Modal(document.getElementById('modalCargo'));
   modalUsuario = new bootstrap.Modal(document.getElementById('modalUsuario'));
+  modalPlantilla = new bootstrap.Modal(document.getElementById('modalPlantilla'));
   
   loadRolesAndCargos();
+  loadTiposDocumentos();
 
   document.getElementById('btn-new-rol').addEventListener('click', () => {
     document.getElementById('form-rol').reset();
@@ -442,6 +599,18 @@ window.addEventListener('DOMContentLoaded', () => {
     modalUsuario.show();
   });
   document.getElementById('usuario-save').addEventListener('click', saveUsuario);
+
+  document.getElementById('btn-new-plantilla').addEventListener('click', () => {
+    document.getElementById('form-plantilla').reset();
+    document.getElementById('plantilla-id').value = '';
+    document.getElementById('plantilla-file').value = '';
+    clearCampos();
+    document.getElementById('modalPlantillaTitle').textContent = 'Nueva plantilla';
+    document.getElementById('plantilla-error').classList.add('d-none');
+    modalPlantilla.show();
+  });
+  document.getElementById('plantilla-save').addEventListener('click', savePlantilla);
+  document.getElementById('btn-add-campo').addEventListener('click', () => addCampoInput());
 
   loadRoles();
 });

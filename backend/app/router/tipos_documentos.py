@@ -56,17 +56,8 @@ def get_all_tipos_documentos(
     db: Session = Depends(get_db),
     user_token: Annotated[UserOut, Depends(get_current_user)] = None
 ):
-    """Obtener todos los tipos de documentos - requiere permiso de seleccionar"""
+    """Obtener todos los tipos de documentos - acceso para usuarios autenticados"""
     try:
-        id_rol = user_token.id_rol
-        
-        # Verificar permisos
-        if not verify_permissions(db, id_rol, modulo, 'seleccionar'):
-            raise HTTPException(
-                status_code=403,
-                detail='Usuario no autorizado para ver tipos de documentos'
-            )
-        
         tipos = crud_tipos_documentos.get_all_tipos_documentos(db)
         return tipos
     except HTTPException:

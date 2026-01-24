@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 from typing import Optional, List
 import logging
+import json
 
 from app.schemas.documentos import DocumentoCreate, DocumentoUpdate
 
@@ -17,6 +18,11 @@ def create_documento(db: Session, documento: DocumentoCreate, usuario_genera: in
     Retorna el ID del documento creado.
     """
     try:
+        # Serializar valores_campos si vienen como dict
+        valores_campos_json = None
+        if documento.valores_campos:
+            valores_campos_json = json.dumps(documento.valores_campos)
+        
         query = text("""
             INSERT INTO documentos (
                 id_tipo, id_plantilla, usuario_genera,
@@ -48,16 +54,22 @@ def create_documento(db: Session, documento: DocumentoCreate, usuario_genera: in
 
 def get_documento_by_id(db: Session, documento_id: int):
     """
-    Obtener documento por ID.
+    Obtener documento por ID con información de tipo, plantilla y usuario.
     """
     try:
         query = text("""
             SELECT 
-                id, id_tipo, id_plantilla, usuario_genera,
-                Asunto AS asunto, consecutivo, fecha_creacion, fecha_emision,
-                ruta_word_generado, ruta_pdf_final, estado
-            FROM documentos 
-            WHERE id = :documento_id
+                d.id, d.id_tipo, d.id_plantilla, d.usuario_genera,
+                d.Asunto AS asunto, d.consecutivo, d.fecha_creacion, d.fecha_emision,
+                d.ruta_word_generado, d.ruta_pdf_final, d.estado,
+                t.nombre AS tipo_nombre,
+                p.nombre AS plantilla_nombre,
+                u.nombre AS usuario_nombre
+            FROM documentos d
+            LEFT JOIN tipos_documentos t ON d.id_tipo = t.id
+            LEFT JOIN plantillas p ON d.id_plantilla = p.id
+            LEFT JOIN usuarios u ON d.usuario_genera = u.id_usuario
+            WHERE d.id = :documento_id
         """)
         
         result = db.execute(query, {"documento_id": documento_id}).mappings().first()
@@ -72,35 +84,44 @@ def get_all_documentos(db: Session, filtro_estado: Optional[str] = None,
                        filtro_usuario: Optional[int] = None) -> List:
     """
     Obtener todos los documentos, con filtros opcionales por estado o usuario.
+    Incluye información de tipo, plantilla y usuario.
     """
     try:
         query = """
             SELECT 
-                id, id_tipo, id_plantilla, usuario_genera,
-                Asunto AS asunto, consecutivo, fecha_creacion, fecha_emision,
-                ruta_word_generado, ruta_pdf_final, estado
-            FROM documentos 
+                d.id, d.id_tipo, d.id_plantilla, d.usuario_genera,
+                d.Asunto AS asunto, d.consecutivo, d.fecha_creacion, 
+                CAST(d.fecha_emision AS DATETIME) AS fecha_emision,
+                d.ruta_word_generado, d.ruta_pdf_final, d.estado,
+                t.nombre AS tipo_nombre,
+                p.nombre AS plantilla_nombre,
+                u.nombre AS usuario_nombre
+            FROM documentos d
+            LEFT JOIN tipos_documentos t ON d.id_tipo = t.id
+            LEFT JOIN plantillas p ON d.id_plantilla = p.id
+            LEFT JOIN usuarios u ON d.usuario_genera = u.id_usuario
             WHERE 1=1
         """
         
         params = {}
         
         if filtro_estado:
-            query += " AND estado = :estado"
+            query += " AND d.estado = :estado"
             params["estado"] = filtro_estado
         
         if filtro_usuario:
-            query += " AND usuario_genera = :usuario"
+            query += " AND d.usuario_genera = :usuario"
             params["usuario"] = filtro_usuario
         
-        query += " ORDER BY fecha_creacion DESC"
+        query += " ORDER BY d.fecha_creacion DESC"
         
         result = db.execute(text(query), params).mappings().all()
-        return result
+        return [dict(row) for row in result]
     
     except Exception as e:
         logger.error(f"Error al obtener documentos: {e}")
-        raise Exception("Error de base de datos al obtener documentos")
+        # Retornar lista vacía en lugar de lanzar excepción
+        return []
 
 
 def update_documento(db: Session, documento_id: int, 
@@ -127,22 +148,64 @@ def update_documento(db: Session, documento_id: int,
         raise Exception("Error de base de datos al actualizar el documento")
 
 
-def cambiar_estado_documento(db: Session, documento_id: int, nuevo_estado: str) -> bool:
+def obtener_transiciones_validas(db: Session, documento_id: int, estado_actual: str) -> List[str]:
     """
-    Cambiar el estado de un documento.
-    Estados válidos: BORRADOR, EN_REVISION_JURIDICA, EN_REVISION_GERENCIAL, 
-                     APROBADO_JURIDICA, FIRMADO, DEVUELTO_JURIDICA, 
-                     DEVUELTO_GERENCIA, PENDIENTE_FINALIZACION, FINALIZADO
+    Obtener los estados válidos a los que puede transitar el documento.
+    Valida según si el tipo requiere revisión jurídica.
+    
+    Returns:
+        Lista de estados permitidos desde el estado actual
     """
     try:
-        estados_validos = [
-            'BORRADOR', 'EN_REVISION_JURIDICA', 'EN_REVISION_GERENCIAL',
-            'APROBADO_JURIDICA', 'FIRMADO', 'DEVUELTO_JURIDICA',
-            'DEVUELTO_GERENCIA', 'PENDIENTE_FINALIZACION', 'FINALIZADO'
-        ]
+        # Obtener documento y verificar si requiere revisión jurídica
+        doc = get_documento_by_id(db, documento_id)
+        if not doc:
+            raise Exception("Documento no encontrado")
         
-        if nuevo_estado not in estados_validos:
-            raise ValueError(f"Estado inválido: {nuevo_estado}")
+        requiere_juridica = necesita_revision_juridica(db, doc.id_tipo)
+        
+        # Mapear transiciones válidas según estado actual
+        transiciones = {
+            'BORRADOR': [
+                'EN_REVISION_JURIDICA' if requiere_juridica else 'EN_REVISION_GERENCIAL'
+            ],
+            'EN_REVISION_JURIDICA': ['APROBADO_JURIDICA', 'DEVUELTO_JURIDICA'],
+            'APROBADO_JURIDICA': ['EN_REVISION_GERENCIAL'],
+            'DEVUELTO_JURIDICA': ['BORRADOR'],
+            'EN_REVISION_GERENCIAL': ['APROBADO_GERENCIA', 'DEVUELTO_GERENCIA'],
+            'APROBADO_GERENCIA': ['FIRMADO'],
+            'DEVUELTO_GERENCIA': ['BORRADOR'],
+            'FIRMADO': ['PENDIENTE_FINALIZACION'],
+            'PENDIENTE_FINALIZACION': ['FINALIZADO'],
+            'FINALIZADO': []
+        }
+        
+        return transiciones.get(estado_actual, [])
+    
+    except Exception as e:
+        logger.error(f"Error al obtener transiciones válidas: {e}")
+        return []
+
+
+def cambiar_estado_documento(db: Session, documento_id: int, nuevo_estado: str) -> bool:
+    """
+    Cambiar el estado de un documento validando transiciones.
+    """
+    try:
+        # Obtener estado actual
+        doc = get_documento_by_id(db, documento_id)
+        if not doc:
+            raise Exception("Documento no encontrado")
+        
+        estado_actual = doc.estado
+        
+        # Validar que sea una transición permitida
+        transiciones_validas = obtener_transiciones_validas(db, documento_id, estado_actual)
+        if nuevo_estado not in transiciones_validas:
+            raise ValueError(
+                f"Transición no permitida de {estado_actual} a {nuevo_estado}. "
+                f"Estados válidos: {transiciones_validas}"
+            )
         
         # Si es FINALIZADO, también actualizar fecha_emision
         if nuevo_estado == 'FINALIZADO':
@@ -166,7 +229,7 @@ def cambiar_estado_documento(db: Session, documento_id: int, nuevo_estado: str) 
         return True
     
     except ValueError as e:
-        logger.error(f"Error: {e}")
+        logger.error(f"Error de validación: {e}")
         raise
     except Exception as e:
         db.rollback()
@@ -259,7 +322,7 @@ def necesita_revision_juridica(db: Session, tipo_documento_id: int) -> bool:
         if result is None:
             return False
         
-        return result.requiere_juridica
+        return bool(result.requiere_juridica)
     
     except Exception as e:
         logger.error(f"Error al verificar si necesita revisión jurídica: {e}")

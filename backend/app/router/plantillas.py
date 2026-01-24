@@ -2,7 +2,7 @@
 Router for plantillas management
 """
 from typing import List, Annotated
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 from pathlib import Path
@@ -32,10 +32,10 @@ MAX_FILE_SIZE = 5 * 1024 * 1024  # 5 MB
 
 @router.post("/", status_code=status.HTTP_201_CREATED, response_model=dict)
 def create_plantilla(
-    id_tipo: int,
-    nombre: str,
-    nombre_archivo: str = None,
-    campos_json: str = None,
+    id_tipo: int = Form(...),
+    nombre: str = Form(...),
+    nombre_archivo: str = Form(None),
+    campos_json: str = Form(None),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     user_token: Annotated[UserOut, Depends(get_current_user)] = None
@@ -109,12 +109,8 @@ def list_plantillas(
     db: Session = Depends(get_db),
     user_token: Annotated[UserOut, Depends(get_current_user)] = None
 ):
-    """Listar todas las plantillas - requiere permiso de seleccionar"""
+    """Listar todas las plantillas - acceso para usuarios autenticados"""
     try:
-        id_rol = user_token.id_rol
-        if not verify_permissions(db, id_rol, modulo, 'seleccionar'):
-            raise HTTPException(status_code=403, detail='Usuario no autorizado para ver plantillas')
-
         return crud_plantillas.get_all_plantillas(db)
     except HTTPException:
         raise
@@ -147,10 +143,10 @@ def get_plantilla(
 @router.put("/{plantilla_id}", status_code=status.HTTP_200_OK)
 def update_plantilla(
     plantilla_id: int,
-    id_tipo: int = None,
-    nombre: str = None,
-    nombre_archivo: str = None,
-    campos_json: str = None,
+    id_tipo: int = Form(None),
+    nombre: str = Form(None),
+    nombre_archivo: str = Form(None),
+    campos_json: str = Form(None),
     file: UploadFile = File(None),
     db: Session = Depends(get_db),
     user_token: Annotated[UserOut, Depends(get_current_user)] = None
@@ -165,7 +161,8 @@ def update_plantilla(
         if not plantilla_db:
             raise HTTPException(status_code=404, detail="Plantilla no encontrada")
 
-        ruta_almacenamiento = plantilla_db.ruta_almacenamiento
+        # plantilla_db viene como Mapping; usar acceso por clave
+        ruta_almacenamiento = plantilla_db.get("ruta_almacenamiento")
         campos_dict = None
 
         # Si se proporciona archivo, procesarlo
@@ -185,8 +182,8 @@ def update_plantilla(
                 )
 
             # Eliminar archivo anterior si existe
-            if plantilla_db.ruta_almacenamiento:
-                old_filename = plantilla_db.ruta_almacenamiento.split("/")[-1]
+            if plantilla_db.get("ruta_almacenamiento"):
+                old_filename = plantilla_db["ruta_almacenamiento"].split("/")[-1]
                 old_filepath = PLANTILLAS_DIR / old_filename
                 if old_filepath.exists():
                     old_filepath.unlink()

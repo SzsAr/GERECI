@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 from typing import Optional, List
 import logging
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -12,6 +13,7 @@ logger = logging.getLogger(__name__)
 def create_plantilla(db: Session, id_tipo: int, nombre: str, nombre_archivo: str, ruta_almacenamiento: Optional[str], campos_json: Optional[dict]) -> Optional[int]:
     """Crear una plantilla"""
     try:
+        campos_serializados = json.dumps(campos_json) if isinstance(campos_json, dict) else campos_json
         query = text(
             """
             INSERT INTO plantillas (id_tipo, nombre, nombre_archivo, ruta_almacenamiento, campos_json)
@@ -23,7 +25,7 @@ def create_plantilla(db: Session, id_tipo: int, nombre: str, nombre_archivo: str
             "nombre": nombre,
             "nombre_archivo": nombre_archivo,
             "ruta_almacenamiento": ruta_almacenamiento,
-            "campos_json": campos_json
+            "campos_json": campos_serializados
         })
         db.commit()
         return result.lastrowid
@@ -38,12 +40,21 @@ def get_plantilla_by_id(db: Session, plantilla_id: int):
     try:
         query = text(
             """
-            SELECT id, id_tipo, nombre, nombre_archivo, ruta_almacenamiento, campos_json
-            FROM plantillas
-            WHERE id = :id
+            SELECT p.id, p.id_tipo, p.nombre, p.nombre_archivo, 
+                   p.ruta_almacenamiento, p.campos_json,
+                   t.nombre AS tipo_nombre
+            FROM plantillas p
+            LEFT JOIN tipos_documentos t ON p.id_tipo = t.id
+            WHERE p.id = :id
             """
         )
         result = db.execute(query, {"id": plantilla_id}).mappings().first()
+        if result and result.get("campos_json") and isinstance(result["campos_json"], str):
+            try:
+                result = dict(result)
+                result["campos_json"] = json.loads(result["campos_json"])
+            except json.JSONDecodeError:
+                pass
         return result
     except Exception as e:
         logger.error(f"Error al obtener plantilla: {e}")
@@ -55,13 +66,26 @@ def get_all_plantillas(db: Session) -> List:
     try:
         query = text(
             """
-            SELECT id, id_tipo, nombre, nombre_archivo, ruta_almacenamiento, campos_json
-            FROM plantillas
-            ORDER BY id ASC
+            SELECT p.id, p.id_tipo, p.nombre, p.nombre_archivo, 
+                   p.ruta_almacenamiento, p.campos_json,
+                   t.nombre AS tipo_nombre
+            FROM plantillas p
+            LEFT JOIN tipos_documentos t ON p.id_tipo = t.id
+            ORDER BY p.id ASC
             """
         )
         result = db.execute(query).mappings().all()
-        return result
+        # Deserializar campos_json si viene como string
+        parsed = []
+        for row in result:
+            row_dict = dict(row)
+            if row_dict.get("campos_json") and isinstance(row_dict["campos_json"], str):
+                try:
+                    row_dict["campos_json"] = json.loads(row_dict["campos_json"])
+                except json.JSONDecodeError:
+                    pass
+            parsed.append(row_dict)
+        return parsed
     except Exception as e:
         logger.error(f"Error al obtener plantillas: {e}")
         raise Exception("Error de base de datos al obtener plantillas")
@@ -80,7 +104,7 @@ def update_plantilla(db: Session, plantilla_id: int, id_tipo: Optional[int] = No
         if ruta_almacenamiento is not None:
             updates["ruta_almacenamiento"] = ruta_almacenamiento
         if campos_json is not None:
-            updates["campos_json"] = campos_json
+            updates["campos_json"] = json.dumps(campos_json) if isinstance(campos_json, dict) else campos_json
 
         if not updates:
             return False

@@ -7,6 +7,24 @@
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
   <link rel="stylesheet" href="./css/custom.css">
+  <script>
+    // Protección: solo superadmin (rol 1)
+    (function() {
+      try {
+        const userStr = localStorage.getItem('user');
+        if (!userStr) {
+          window.location.href = './index.html';
+          return;
+        }
+        const user = JSON.parse(userStr);
+        if (user.id_rol !== 1) {
+          window.location.href = './dashboard.html';
+        }
+      } catch (e) {
+        window.location.href = './index.html';
+      }
+    })();
+  </script>
 </head>
 <body class="bg-light">
   <div id="app-navbar"></div>
@@ -87,7 +105,7 @@
             <table class="table align-middle" id="tabla-plantillas">
               <thead>
                 <tr>
-                  <th>ID</th><th>Nombre</th><th>Tipo</th><th>Archivo</th><th>Campos</th><th class="text-end">Acciones</th>
+                  <th>Nombre</th><th>Tipo</th><th>Archivo</th><th class="text-end">Acciones</th>
                 </tr>
               </thead>
               <tbody></tbody>
@@ -197,6 +215,53 @@
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
           <button type="button" class="btn btn-primary" id="usuario-save">Guardar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Plantilla -->
+  <div class="modal fade" id="modalPlantilla" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="modalPlantillaTitle">Nueva plantilla</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <form id="form-plantilla" enctype="multipart/form-data">
+            <input type="hidden" id="plantilla-id">
+            <div class="mb-3">
+              <label class="form-label">Nombre</label>
+              <input type="text" class="form-control" id="plantilla-nombre" required>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Tipo de documento</label>
+              <select class="form-control" id="plantilla-tipo" required>
+                <option value="">Seleccione...</option>
+              </select>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Archivo Word (.docx)</label>
+              <input type="file" class="form-control" id="plantilla-file" accept=".docx">
+              <small class="form-text text-muted">Opcional al editar. Máx 5MB</small>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Campos de la plantilla</label>
+              <div id="plantilla-campos-container">
+                <!-- Los campos se agregan dinámicamente aquí -->
+              </div>
+              <button type="button" class="btn btn-sm btn-outline-secondary mt-2" id="btn-add-campo">
+                <i class="bi bi-plus-circle"></i> Agregar campo
+              </button>
+              <small class="form-text text-muted d-block mt-1">Solo escribe el nombre del campo; el sistema usará {{campo}} dentro del Word automáticamente</small>
+            </div>
+          </form>
+          <div id="plantilla-error" class="text-danger small mt-2 d-none"></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+          <button type="button" class="btn btn-primary" id="plantilla-save">Guardar</button>
         </div>
       </div>
     </div>
