@@ -36,16 +36,32 @@ function initDocumentosPage() {
     guardarCamposDocumento();
   });
   
-  document.getElementById('btn-aprobar-firmar').addEventListener('click', () => {
-    firmarDocumento();
+  document.getElementById('btn-enviar-revision').addEventListener('click', () => {
+    enviarARevision();
+  });
+  
+  document.getElementById('btn-aprobar').addEventListener('click', () => {
+    aprobarDocumento();
   });
   
   document.getElementById('btn-devolver').addEventListener('click', () => {
     mostrarSectionObservaciones();
   });
   
+  document.getElementById('btn-firmar').addEventListener('click', () => {
+    mostrarSectionFirma();
+  });
+  
+  document.getElementById('btn-finalizar').addEventListener('click', () => {
+    finalizarDocumento();
+  });
+  
   document.getElementById('btn-enviar-observaciones').addEventListener('click', () => {
     devolverDocumento();
+  });
+  
+  document.getElementById('btn-confirmar-firma').addEventListener('click', () => {
+    confirmarFirma();
   });
 }
 
@@ -284,8 +300,11 @@ async function generarDocumento() {
     const respuesta = await api.request('/documentos/create', { method: 'POST', body });
     const docId = respuesta.documento_id;
     
-    // Generar Word desde plantilla
-    await api.request(`/documentos/${docId}/generar`, { method: 'POST' });
+    // Generar Word desde plantilla, enviando los valores de los campos
+    await api.request(`/documentos/${docId}/generar`, { 
+      method: 'POST',
+      body: { valores_campos: campos }
+    });
     
     modalNuevoDoc.hide();
     cargarDocumentos();
@@ -359,9 +378,15 @@ async function verDocumento(docId) {
 
 function mostrarAccionesDisponibles(transiciones) {
   const sectionAcciones = document.getElementById('section-acciones');
-  const btnAprobar = document.getElementById('btn-aprobar-firmar');
-  const btnDevolver = document.getElementById('btn-devolver');
   const sectionObs = document.getElementById('section-observaciones');
+  const sectionFirma = document.getElementById('section-firma');
+  
+  // Ocultar todas las acciones primero
+  document.getElementById('btn-enviar-revision').classList.add('d-none');
+  document.getElementById('btn-aprobar').classList.add('d-none');
+  document.getElementById('btn-devolver').classList.add('d-none');
+  document.getElementById('btn-firmar').classList.add('d-none');
+  document.getElementById('btn-finalizar').classList.add('d-none');
   
   if (!transiciones || transiciones.length === 0) {
     sectionAcciones.classList.add('d-none');
@@ -370,21 +395,31 @@ function mostrarAccionesDisponibles(transiciones) {
   
   sectionAcciones.classList.remove('d-none');
   sectionObs.classList.add('d-none');
+  sectionFirma.classList.add('d-none');
   
-  // Mostrar botón "Aprobar" si hay transiciones
-  const esAprobacion = transiciones.some(t => t.includes('APROBADO') || t === 'FIRMADO' || t === 'PENDIENTE_FINALIZACION');
-  const esDevolucion = transiciones.some(t => t.includes('DEVUELTO'));
+  // Mostrar botones según las transiciones disponibles
+  const estado = documentoActual.estado;
   
-  if (esAprobacion) {
-    btnAprobar.classList.remove('d-none');
-  } else {
-    btnAprobar.classList.add('d-none');
-  }
-  
-  if (esDevolucion) {
-    btnDevolver.classList.remove('d-none');
-  } else {
-    btnDevolver.classList.add('d-none');
+  if (estado === 'BORRADOR') {
+    document.getElementById('btn-enviar-revision').classList.remove('d-none');
+  } else if (estado === 'EN_REVISION_JURIDICA' || estado === 'EN_REVISION_GERENCIAL') {
+    if (transiciones.includes('APROBADO_JURIDICA') || transiciones.includes('APROBADO_GERENCIA')) {
+      document.getElementById('btn-aprobar').classList.remove('d-none');
+    }
+    if (transiciones.includes('DEVUELTO_JURIDICA') || transiciones.includes('DEVUELTO_GERENCIA')) {
+      document.getElementById('btn-devolver').classList.remove('d-none');
+    }
+  } else if (estado === 'APROBADO_JURIDICA' || estado === 'APROBADO_GERENCIA') {
+    if (transiciones.includes('FIRMADO')) {
+      document.getElementById('btn-firmar').classList.remove('d-none');
+    }
+    if (estado === 'APROBADO_GERENCIA' && transiciones.includes('DEVUELTO_GERENCIA')) {
+      document.getElementById('btn-devolver').classList.remove('d-none');
+    }
+  } else if (estado === 'FIRMADO' || estado === 'PENDIENTE_FINALIZACION') {
+    if (transiciones.includes('FINALIZADO')) {
+      document.getElementById('btn-finalizar').classList.remove('d-none');
+    }
   }
 }
 
@@ -420,6 +455,98 @@ async function firmarDocumento() {
   }
 }
 
+function mostrarSectionFirma() {
+  document.getElementById('section-acciones').classList.add('d-none');
+  document.getElementById('section-firma').classList.remove('d-none');
+}
+
+async function enviarARevision() {
+  if (!confirm('¿Enviar documento a revisión?')) return;
+  
+  try {
+    const transiciones = await api.request(`/documentos/${documentoActual.id}/transiciones`);
+    const siguienteEstado = transiciones.transiciones_validas[0];
+    
+    await api.request(`/documentos/${documentoActual.id}/estado`, {
+      method: 'PUT',
+      body: { nuevo_estado: siguienteEstado, descripcion_cambio: 'Enviado a revisión' }
+    });
+    
+    alert('Documento enviado a revisión');
+    modalVerDoc.hide();
+    cargarDocumentos();
+  } catch (err) {
+    alert(`Error: ${err.message}`);
+  }
+}
+
+async function aprobarDocumento() {
+  if (!confirm('¿Aprobar este documento?')) return;
+  
+  try {
+    const transiciones = await api.request(`/documentos/${documentoActual.id}/transiciones`);
+    const siguienteEstado = transiciones.transiciones_validas.find(t => t.includes('APROBADO'));
+    
+    if (!siguienteEstado) {
+      throw new Error('No hay estado de aprobación disponible');
+    }
+    
+    await api.request(`/documentos/${documentoActual.id}/estado`, {
+      method: 'PUT',
+      body: { nuevo_estado: siguienteEstado, descripcion_cambio: 'Documento aprobado' }
+    });
+    
+    alert('Documento aprobado');
+    modalVerDoc.hide();
+    cargarDocumentos();
+  } catch (err) {
+    alert(`Error: ${err.message}`);
+  }
+}
+
+async function confirmarFirma() {
+  const inputFirma = document.getElementById('input-firma');
+  
+  if (!inputFirma.files || inputFirma.files.length === 0) {
+    alert('Seleccione una imagen de firma');
+    return;
+  }
+  
+  try {
+    const formData = new FormData();
+    formData.append('firma', inputFirma.files[0]);
+    formData.append('nuevo_estado', 'FIRMADO');
+    
+    await api.request(`/documentos/${documentoActual.id}/firmar`, {
+      method: 'POST',
+      body: formData
+    });
+    
+    alert('Documento firmado correctamente');
+    modalVerDoc.hide();
+    cargarDocumentos();
+  } catch (err) {
+    alert(`Error al firmar: ${err.message}`);
+  }
+}
+
+async function finalizarDocumento() {
+  if (!confirm('¿Finalizar documento? Se asignará consecutivo y generará PDF final')) return;
+  
+  try {
+    await api.request(`/documentos/${documentoActual.id}/estado`, {
+      method: 'PUT',
+      body: { nuevo_estado: 'FINALIZADO', descripcion_cambio: 'Documento finalizado' }
+    });
+    
+    alert('Documento finalizado. Se ha asignado consecutivo y generado PDF');
+    modalVerDoc.hide();
+    cargarDocumentos();
+  } catch (err) {
+    alert(`Error: ${err.message}`);
+  }
+}
+
 async function devolverDocumento() {
   const observaciones = document.getElementById('textarea-observaciones').value.trim();
   if (!observaciones) {
@@ -428,20 +555,23 @@ async function devolverDocumento() {
   }
   
   try {
-    // Para ahora, solo marcamos que hay observaciones y devolvemos a BORRADOR
-    // Se puede extender para guardar en tabla observaciones
+    const transiciones = await api.request(`/documentos/${documentoActual.id}/transiciones`);
+    const estadoDevolucion = transiciones.transiciones_validas.find(t => t.includes('DEVUELTO'));
+    
+    if (!estadoDevolucion) {
+      throw new Error('No se puede devolver desde este estado');
+    }
+    
     await api.request(`/documentos/${documentoActual.id}/estado`, {
       method: 'PUT',
-      body: { nuevo_estado: 'BORRADOR', descripcion_cambio: observaciones }
+      body: { nuevo_estado: estadoDevolucion, descripcion_cambio: observaciones }
     });
     
     alert('Documento devuelto con observaciones');
     modalVerDoc.hide();
     cargarDocumentos();
   } catch (err) {
-    const errBox = document.getElementById('ver-doc-error');
-    errBox.textContent = err.message;
-    errBox.classList.remove('d-none');
+    alert(`Error: ${err.message}`);
   }
 }
 

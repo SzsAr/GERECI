@@ -21,7 +21,7 @@ SET @@SESSION.SQL_LOG_BIN= 0;
 -- GTID state at the beginning of the backup 
 --
 
-SET @@GLOBAL.GTID_PURGED=/*!80000 '+'*/ '06568d03-f233-11f0-8a7e-bcfce7e55e31:1-68';
+SET @@GLOBAL.GTID_PURGED=/*!80000 '+'*/ '06568d03-f233-11f0-8a7e-bcfce7e55e31:1-226';
 
 --
 -- Table structure for table `plantillas`
@@ -36,11 +36,12 @@ CREATE TABLE `plantillas` (
   `nombre` varchar(50) NOT NULL,
   `nombre_archivo` varchar(255) NOT NULL,
   `ruta_almacenamiento` varchar(500) DEFAULT NULL,
+  `campos_json` json DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `id` (`id`),
   KEY `id_tipo` (`id_tipo`),
   CONSTRAINT `plantillas_ibfk_1` FOREIGN KEY (`id_tipo`) REFERENCES `tipos_documentos` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=8 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -49,6 +50,7 @@ CREATE TABLE `plantillas` (
 
 LOCK TABLES `plantillas` WRITE;
 /*!40000 ALTER TABLE `plantillas` DISABLE KEYS */;
+INSERT INTO `plantillas` VALUES (5,1,'Circular Normativa','02D202 - F03 Circular.docx','/static/plantillas/e24b6112-b905-4132-b489-dec944d19ad1.docx','{\"ada\": \"\", \"eqweq\": \"\", \"ada231\": \"\"}'),(7,3,'Resolución','02D202 - F01 Resolución.docx','/static/plantillas/8ebf327b-3f9b-4184-b1fc-b497db1c40ad.docx','{\"Hola\": \"\"}');
 /*!40000 ALTER TABLE `plantillas` ENABLE KEYS */;
 UNLOCK TABLES;
 SET @@SESSION.SQL_LOG_BIN = @MYSQLDUMP_TEMP_LOG_BIN;
@@ -62,4 +64,4 @@ SET @@SESSION.SQL_LOG_BIN = @MYSQLDUMP_TEMP_LOG_BIN;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-01-20 11:57:32
+-- Dump completed on 2026-01-26  9:40:54

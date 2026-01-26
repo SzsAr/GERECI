@@ -21,7 +21,7 @@ SET @@SESSION.SQL_LOG_BIN= 0;
 -- GTID state at the beginning of the backup 
 --
 
-SET @@GLOBAL.GTID_PURGED=/*!80000 '+'*/ '06568d03-f233-11f0-8a7e-bcfce7e55e31:1-68';
+SET @@GLOBAL.GTID_PURGED=/*!80000 '+'*/ '06568d03-f233-11f0-8a7e-bcfce7e55e31:1-226';
 
 --
 -- Table structure for table `control_consecutivos`
@@ -45,7 +45,7 @@ CREATE TABLE `control_consecutivos` (
 
 LOCK TABLES `control_consecutivos` WRITE;
 /*!40000 ALTER TABLE `control_consecutivos` DISABLE KEYS */;
-INSERT INTO `control_consecutivos` VALUES (1,1),(2,1),(3,1);
+INSERT INTO `control_consecutivos` VALUES (1,3),(2,1),(3,1);
 /*!40000 ALTER TABLE `control_consecutivos` ENABLE KEYS */;
 UNLOCK TABLES;
 SET @@SESSION.SQL_LOG_BIN = @MYSQLDUMP_TEMP_LOG_BIN;
@@ -59,4 +59,4 @@ SET @@SESSION.SQL_LOG_BIN = @MYSQLDUMP_TEMP_LOG_BIN;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-01-20 11:57:32
+-- Dump completed on 2026-01-26  9:40:54

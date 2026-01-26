@@ -26,10 +26,10 @@ def create_documento(db: Session, documento: DocumentoCreate, usuario_genera: in
         query = text("""
             INSERT INTO documentos (
                 id_tipo, id_plantilla, usuario_genera,
-                Asunto, estado
+                Asunto, estado, valores_campos
             ) VALUES (
                 :id_tipo, :id_plantilla, :usuario_genera,
-                :asunto, 'BORRADOR'
+                :asunto, 'BORRADOR', :valores_campos
             )
         """)
         
@@ -37,7 +37,8 @@ def create_documento(db: Session, documento: DocumentoCreate, usuario_genera: in
             "id_tipo": documento.id_tipo,
             "id_plantilla": documento.id_plantilla,
             "usuario_genera": usuario_genera,
-            "asunto": documento.asunto
+            "asunto": documento.asunto,
+            "valores_campos": valores_campos_json
         }
         
         result = db.execute(query, params)
@@ -60,24 +61,32 @@ def get_documento_by_id(db: Session, documento_id: int):
         query = text("""
             SELECT 
                 d.id, d.id_tipo, d.id_plantilla, d.usuario_genera,
-                d.Asunto AS asunto, d.consecutivo, d.fecha_creacion, d.fecha_emision,
+                d.Asunto AS asunto, d.consecutivo, d.fecha_creacion, 
+                CAST(d.fecha_emision AS DATETIME) AS fecha_emision,
                 d.ruta_word_generado, d.ruta_pdf_final, d.estado,
+                d.valores_campos,
                 t.nombre AS tipo_nombre,
                 p.nombre AS plantilla_nombre,
                 u.nombre AS usuario_nombre
             FROM documentos d
             LEFT JOIN tipos_documentos t ON d.id_tipo = t.id
             LEFT JOIN plantillas p ON d.id_plantilla = p.id
-            LEFT JOIN usuarios u ON d.usuario_genera = u.id_usuario
+            LEFT JOIN usuarios u ON d.usuario_genera = u.id
             WHERE d.id = :documento_id
         """)
         
         result = db.execute(query, {"documento_id": documento_id}).mappings().first()
-        return result
+        if result:
+            doc_dict = dict(result)
+            # Convertir valores_campos JSON string a dict si existe
+            if doc_dict.get('valores_campos') and isinstance(doc_dict['valores_campos'], str):
+                doc_dict['valores_campos'] = json.loads(doc_dict['valores_campos'])
+            return doc_dict
+        return None
     
     except Exception as e:
         logger.error(f"Error al obtener documento: {e}")
-        raise Exception("Error de base de datos al obtener el documento")
+        raise Exception(f"Error de base de datos al obtener el documento: {str(e)}")
 
 
 def get_all_documentos(db: Session, filtro_estado: Optional[str] = None, 
@@ -93,13 +102,14 @@ def get_all_documentos(db: Session, filtro_estado: Optional[str] = None,
                 d.Asunto AS asunto, d.consecutivo, d.fecha_creacion, 
                 CAST(d.fecha_emision AS DATETIME) AS fecha_emision,
                 d.ruta_word_generado, d.ruta_pdf_final, d.estado,
+                d.valores_campos,
                 t.nombre AS tipo_nombre,
                 p.nombre AS plantilla_nombre,
                 u.nombre AS usuario_nombre
             FROM documentos d
             LEFT JOIN tipos_documentos t ON d.id_tipo = t.id
             LEFT JOIN plantillas p ON d.id_plantilla = p.id
-            LEFT JOIN usuarios u ON d.usuario_genera = u.id_usuario
+            LEFT JOIN usuarios u ON d.usuario_genera = u.id
             WHERE 1=1
         """
         
@@ -116,7 +126,14 @@ def get_all_documentos(db: Session, filtro_estado: Optional[str] = None,
         query += " ORDER BY d.fecha_creacion DESC"
         
         result = db.execute(text(query), params).mappings().all()
-        return [dict(row) for row in result]
+        docs = []
+        for row in result:
+            doc_dict = dict(row)
+            # Convertir valores_campos JSON string a dict si existe
+            if doc_dict.get('valores_campos') and isinstance(doc_dict['valores_campos'], str):
+                doc_dict['valores_campos'] = json.loads(doc_dict['valores_campos'])
+            docs.append(doc_dict)
+        return docs
     
     except Exception as e:
         logger.error(f"Error al obtener documentos: {e}")

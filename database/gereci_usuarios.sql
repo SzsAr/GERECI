@@ -21,7 +21,7 @@ SET @@SESSION.SQL_LOG_BIN= 0;
 -- GTID state at the beginning of the backup 
 --
 
-SET @@GLOBAL.GTID_PURGED=/*!80000 '+'*/ '06568d03-f233-11f0-8a7e-bcfce7e55e31:1-68';
+SET @@GLOBAL.GTID_PURGED=/*!80000 '+'*/ '06568d03-f233-11f0-8a7e-bcfce7e55e31:1-226';
 
 --
 -- Table structure for table `usuarios`
@@ -37,13 +37,16 @@ CREATE TABLE `usuarios` (
   `username` varchar(255) DEFAULT NULL,
   `pass_hash` varchar(255) NOT NULL,
   `id_rol` tinyint NOT NULL,
+  `id_cargo` int DEFAULT NULL,
   `firma` varchar(500) DEFAULT NULL,
   `estado` tinyint(1) DEFAULT '1',
   PRIMARY KEY (`id`),
   UNIQUE KEY `id` (`id`),
   KEY `id_rol` (`id_rol`),
-  CONSTRAINT `usuarios_ibfk_1` FOREIGN KEY (`id_rol`) REFERENCES `roles` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+  KEY `usuarios_ibfk_cargo` (`id_cargo`),
+  CONSTRAINT `usuarios_ibfk_1` FOREIGN KEY (`id_rol`) REFERENCES `roles` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `usuarios_ibfk_cargo` FOREIGN KEY (`id_cargo`) REFERENCES `cargos` (`id`) ON DELETE SET NULL ON UPDATE CASCADE
+) ENGINE=InnoDB AUTO_INCREMENT=9 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -52,7 +55,7 @@ CREATE TABLE `usuarios` (
 
 LOCK TABLES `usuarios` WRITE;
 /*!40000 ALTER TABLE `usuarios` DISABLE KEYS */;
-INSERT INTO `usuarios` VALUES (1,'Develop','123456789','dev','$2b$12$dqHqOjmV3VJKqnvcsFd4aOc/t4LpECbs8T5UJBk47sFUr9PwRsmkS',1,'/static/firmas/db55cb1c-476d-480b-9d69-74e0a348eed8.png',1),(2,'Coordinadora','123456789','coor','123456789',1,'string',1),(4,'Gerente','987456123','ger','$2b$12$LVboPouN.q9w3NR54cwOQu.Q0QwZUYZ6kH/k/XsFo2MtZzkNOeCPK',2,NULL,1);
+INSERT INTO `usuarios` VALUES (1,'Develop','123456789','dev','$2b$12$dqHqOjmV3VJKqnvcsFd4aOc/t4LpECbs8T5UJBk47sFUr9PwRsmkS',1,6,'/static/firmas/db55cb1c-476d-480b-9d69-74e0a348eed8.png',1),(2,'Santiago','123456789','san','$2b$12$dqHqOjmV3VJKqnvcsFd4aOc/t4LpECbs8T5UJBk47sFUr9PwRsmkS',4,1,'string',1),(4,'Martin','987456123','ger','$2b$12$LVboPouN.q9w3NR54cwOQu.Q0QwZUYZ6kH/k/XsFo2MtZzkNOeCPK',2,2,NULL,1),(6,'Luisa','123645789','jur','$2b$12$bGIeW5rvfdj8BXRJI8pn8O6A0XAWGraf3Qgg6QjHgrKCGeavscyZK',3,3,NULL,1);
 /*!40000 ALTER TABLE `usuarios` ENABLE KEYS */;
 UNLOCK TABLES;
 SET @@SESSION.SQL_LOG_BIN = @MYSQLDUMP_TEMP_LOG_BIN;
@@ -66,4 +69,4 @@ SET @@SESSION.SQL_LOG_BIN = @MYSQLDUMP_TEMP_LOG_BIN;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-01-20 11:57:33
+-- Dump completed on 2026-01-26  9:40:54

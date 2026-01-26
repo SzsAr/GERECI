@@ -40,6 +40,7 @@ class DocumentoOut(BaseModel):
     ruta_word_generado: Optional[str]
     ruta_pdf_final: Optional[str]
     estado: str
+    valores_campos: Optional[Dict[str, Any]] = None
     tipo_nombre: Optional[str] = None
     plantilla_nombre: Optional[str] = None
     usuario_nombre: Optional[str] = None

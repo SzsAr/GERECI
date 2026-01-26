@@ -273,7 +273,8 @@ def delete_documento(
         if not documento:
             raise HTTPException(status_code=404, detail="Documento no encontrado")
         
-        if documento.estado != 'BORRADOR':
+        estado = documento['estado'] if isinstance(documento, dict) else documento.estado
+        if estado != 'BORRADOR':
             raise HTTPException(
                 status_code=400,
                 detail='Solo se pueden eliminar documentos en estado BORRADOR'
@@ -298,6 +299,7 @@ def delete_documento(
 @router.post("/{documento_id}/generar", status_code=status.HTTP_200_OK)
 def generar_documento_word(
     documento_id: int,
+    valores_campos: dict = None,
     db: Session = Depends(get_db),
     user_token: Annotated[UserOut, Depends(get_current_user)] = None
 ):
@@ -321,12 +323,12 @@ def generar_documento_word(
             raise HTTPException(status_code=404, detail="Documento no encontrado")
         
         # Obtener plantilla
-        plantilla = get_plantilla_by_id(db, documento.id_plantilla)
+        plantilla = get_plantilla_by_id(db, documento['id_plantilla'] if isinstance(documento, dict) else documento.id_plantilla)
         if not plantilla:
             raise HTTPException(status_code=404, detail="Plantilla no encontrada")
         
         # Obtener ruta completa de la plantilla
-        plantilla_ruta = plantilla.ruta_almacenamiento
+        plantilla_ruta = plantilla['ruta_almacenamiento'] if isinstance(plantilla, dict) else plantilla.ruta_almacenamiento
         if plantilla_ruta.startswith('/static/'):
             plantilla_ruta = plantilla_ruta.replace('/static/', '')
         
@@ -336,13 +338,11 @@ def generar_documento_word(
         if not os.path.exists(plantilla_path):
             raise HTTPException(status_code=404, detail=f"Plantilla no encontrada en {plantilla_path}")
         
-        # Obtener valores de campos (si existen en el documento)
-        valores_campos = {}
-        if plantilla.campos_json and isinstance(plantilla.campos_json, dict):
-            valores_campos = plantilla.campos_json
+        # Usar valores_campos pasados como parámetro o vacío
+        campos_para_plantilla = valores_campos or {}
         
         # Generar documento Word
-        ruta_word = generar_word_desde_plantilla(plantilla_path, documento_id, valores_campos)
+        ruta_word = generar_word_desde_plantilla(plantilla_path, documento_id, campos_para_plantilla)
         
         # Actualizar documento con ruta del Word generado
         from app.crud import documentos as crud_doc

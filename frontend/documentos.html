@@ -191,12 +191,21 @@
           <!-- Acciones de estado -->
           <div id="section-acciones" class="d-none">
             <h6>Acciones disponibles</h6>
-            <div class="btn-group w-100" role="group">
-              <button id="btn-aprobar-firmar" type="button" class="btn btn-success d-none">
-                <i class="bi bi-check-circle"></i> Aprobar y Firmar
+            <div id="acciones-container" class="d-flex gap-2 flex-wrap">
+              <button id="btn-enviar-revision" type="button" class="btn btn-primary d-none">
+                <i class="bi bi-send"></i> Enviar a Revisión
+              </button>
+              <button id="btn-aprobar" type="button" class="btn btn-success d-none">
+                <i class="bi bi-check-circle"></i> Aprobar
               </button>
               <button id="btn-devolver" type="button" class="btn btn-warning d-none">
                 <i class="bi bi-arrow-counterclockwise"></i> Devolver
+              </button>
+              <button id="btn-firmar" type="button" class="btn btn-info d-none">
+                <i class="bi bi-pen"></i> Firmar
+              </button>
+              <button id="btn-finalizar" type="button" class="btn btn-success d-none">
+                <i class="bi bi-check2-all"></i> Finalizar
               </button>
             </div>
           </div>
@@ -206,7 +215,16 @@
             <label class="form-label">Observaciones:</label>
             <textarea id="textarea-observaciones" class="form-control" rows="3" placeholder="Ingrese las observaciones..."></textarea>
             <button id="btn-enviar-observaciones" type="button" class="btn btn-warning btn-sm mt-2">
-              Enviar devolución
+              Confirmar devolución
+            </button>
+          </div>
+          
+          <!-- Sección de firma -->
+          <div id="section-firma" class="d-none mt-3">
+            <label class="form-label">Cargar firma digital:</label>
+            <input type="file" id="input-firma" class="form-control" accept="image/*">
+            <button id="btn-confirmar-firma" type="button" class="btn btn-info btn-sm mt-2">
+              Confirmar firma
             </button>
           </div>
         </div>
