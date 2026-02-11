@@ -97,6 +97,58 @@ def get_firmas_by_documento(db: Session, documento_id: int):
         
         result = db.execute(query, {"documento_id": documento_id}).mappings().all()
         return [dict(row) for row in result]
+    except Exception as e:
+        logger.error(f"Error al obtener firmas del documento: {e}")
+        raise Exception("Error de base de datos al obtener firmas")
+
+
+def registrar_firma_aprobacion(db: Session, documento_id: int, usuario_id: int) -> Optional[int]:
+    """
+    Registrar firma automática cuando un usuario aprueba un documento.
+    No lanza excepción si el usuario ya firmó (para permitir múltiples cambios de estado).
+    
+    Returns:
+        ID de la firma creada, o None si ya existía
+    """
+    try:
+        # Verificar si el usuario ya firmó
+        query_check = text("""
+            SELECT id FROM firmas_digitales 
+            WHERE id_documento = :id_documento AND id_usuario = :id_usuario
+        """)
+        
+        existing = db.execute(query_check, {
+            "id_documento": documento_id,
+            "id_usuario": usuario_id
+        }).fetchone()
+        
+        if existing:
+            logger.info(f"Usuario {usuario_id} ya había firmado documento {documento_id}")
+            return None
+        
+        # Insertar firma
+        query = text("""
+            INSERT INTO firmas_digitales (
+                id_usuario, id_documento
+            ) VALUES (
+                :id_usuario, :id_documento
+            )
+        """)
+        
+        result = db.execute(query, {
+            "id_usuario": usuario_id,
+            "id_documento": documento_id
+        })
+        db.commit()
+        
+        logger.info(f"Firma registrada: usuario {usuario_id} en documento {documento_id}")
+        return result.lastrowid
+    
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error al registrar firma de aprobación: {e}")
+        # No lanzar excepción, solo loggear el error
+        return None
     
     except Exception as e:
         logger.error(f"Error al obtener firmas del documento: {e}")

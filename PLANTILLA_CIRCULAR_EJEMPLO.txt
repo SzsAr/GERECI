@@ -1,0 +1,117 @@
+# Ejemplo de Plantilla de Circular - Sistema GERECI
+
+Este es el contenido que debes copiar y pegar en un documento de Microsoft Word (.docx).
+Luego guárdalo como "plantilla_circular.docx" y súbelo al sistema.
+
+================================================================================
+
+                            CIRCULAR {{ consecutivo }}
+                                        
+                                        
+Fecha: {{ fecha }}
+De: {{ remitente }}
+Para: {{ destinatarios }}
+
+================================================================================
+
+ASUNTO: {{ asunto }}
+
+{% if tipo_circular == "normativa" %}
+Por medio de la presente circular de carácter NORMATIVO, se comunica lo siguiente:
+{% else %}
+Por medio de la presente circular de carácter INFORMATIVO, se comunica lo siguiente:
+{% endif %}
+
+CONTENIDO:
+
+{{ contenido }}
+
+{% if instrucciones %}
+INSTRUCCIONES:
+
+{% for instruccion in instrucciones %}
+{{ loop.index }}. {{ instruccion }}
+
+{% endfor %}
+{% endif %}
+
+{% if alcance %}
+ALCANCE:
+{{ alcance }}
+{% endif %}
+
+{% if vigencia %}
+VIGENCIA:
+Esta circular tiene vigencia desde {{ fecha_vigencia_inicio }} {% if fecha_vigencia_fin %}hasta {{ fecha_vigencia_fin }}{% else %}hasta nueva disposición{% endif %}.
+{% endif %}
+
+{% if disposiciones %}
+DISPOSICIONES:
+
+{% for disp in disposiciones %}
+Artículo {{ loop.index }}: {{ disp }}
+
+{% endfor %}
+{% endif %}
+
+{% if anexos %}
+ANEXOS:
+{% for anexo in anexos %}
+- {{ anexo }}
+{% endfor %}
+{% endif %}
+
+{% if responsables %}
+RESPONSABLES:
+
+{% for resp in responsables %}
+- {{ resp.cargo }}: {{ resp.nombre }}
+  Responsabilidades: {{ resp.responsabilidades }}
+
+{% endfor %}
+{% endif %}
+
+{% if plazo %}
+PLAZO DE CUMPLIMIENTO:
+{{ plazo }}
+{% endif %}
+
+{% if observaciones %}
+OBSERVACIONES:
+{{ observaciones }}
+{% endif %}
+
+--------------------------------------------------------------------------------
+
+Se solicita dar amplia difusión al contenido de la presente circular entre 
+todo el personal a su cargo.
+
+Para mayor información, comunicarse con {{ contacto_nombre }} al correo 
+{{ contacto_email }} o al teléfono {{ contacto_telefono }}.
+
+
+Atentamente,
+
+
+_________________________
+{{ remitente }}
+{{ cargo_remitente }}
+
+
+Documento generado por: {{ usuario_nombre }}
+Sistema GERECI - Gestión de Resoluciones y Circulares
+Fecha de generación: {{ fecha }}
+
+================================================================================
+     Este es un documento oficial - Favor no destruir ni modificar
+================================================================================
+
+CONTROL DE DISTRIBUCIÓN:
+{% if unidades_destino %}
+Unidades destinatarias:
+{% for unidad in unidades_destino %}
+- {{ unidad }}
+{% endfor %}
+{% endif %}
+
+Copia controlada No. {{ numero_copia }}

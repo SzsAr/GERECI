@@ -7,13 +7,17 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 import json
 import os
+import logging
 from pathlib import Path
 
 from core.database import get_db
 from app.schemas.documentos import DocumentoCreate, DocumentoUpdate, DocumentoOut, DocumentoStateChange
+from app.schemas.observaciones import ObservacionCreate
 from app.schemas.users import UserOut
 from app.crud import documentos as crud_documentos
+from app.crud import observaciones as crud_observaciones
 from app.crud.permisos import verify_permissions
+from app.crud.firmas_digitales import registrar_firma_aprobacion, get_firmas_by_documento
 from app.api.dependencies import get_current_user
 from app.utils.document_generator import (
     generar_word_desde_plantilla,
@@ -22,6 +26,8 @@ from app.utils.document_generator import (
     DOCUMENTOS_DIR
 )
 from app.crud.plantillas import get_plantilla_by_id
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 modulo = 6  # Módulo 6: documentos (según tabla modulos)
@@ -150,6 +156,9 @@ def update_documento(
     try:
         id_rol = user_token.id_rol
         
+        # Log de entrada
+        logger.info(f"Actualizando documento {documento_id}, valores_campos: {documento_update.valores_campos}")
+        
         # Verificar permisos
         if not verify_permissions(db, id_rol, modulo, 'actualizar'):
             raise HTTPException(
@@ -163,20 +172,24 @@ def update_documento(
             raise HTTPException(status_code=404, detail="Documento no encontrado")
         
         # Actualizar
-        crud_documentos.update_documento(db, documento_id, documento_update)
+        result = crud_documentos.update_documento(db, documento_id, documento_update)
+        
+        if not result:
+            raise HTTPException(status_code=400, detail="No se pudo actualizar el documento")
         
         return {"message": "Documento actualizado correctamente"}
     
     except HTTPException:
         raise
     except SQLAlchemyError as e:
+        logger.error(f"Error SQL al actualizar documento: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.put("/{documento_id}/estado", status_code=status.HTTP_200_OK)
-def cambiar_estado_documento(
+def cambiar_estado_documento_endpoint(
     documento_id: int,
     cambio_estado: DocumentoStateChange,
     db: Session = Depends(get_db),
@@ -184,19 +197,22 @@ def cambiar_estado_documento(
 ):
     """
     Cambiar el estado de un documento.
+    Si el nuevo estado es FINALIZADO, el trigger asigna automáticamente 
+    el consecutivo y se genera el PDF final.
+    
     Requiere permiso de actualizar en módulo Documentos.
     
-    Estados válidos:
-    - BORRADOR
-    - EN_REVISION_JURIDICA
-    - EN_REVISION_GERENCIAL
-    - APROBADO_JURIDICA
-    - APROBADO_GERENCIA
-    - FIRMADO
-    - DEVUELTO_JURIDICA
-    - DEVUELTO_GERENCIA
-    - PENDIENTE_FINALIZACION
-    - FINALIZADO
+    Estados válidos según flujo:
+    - BORRADOR → EN_REVISION_JURIDICA (si requiere jurídica) o EN_REVISION_GERENCIAL
+    - EN_REVISION_JURIDICA → APROBADO_JURIDICA o DEVUELTO_JURIDICA
+    - DEVUELTO_JURIDICA → EN_REVISION_JURIDICA
+    - APROBADO_JURIDICA → EN_REVISION_GERENCIAL
+    - EN_REVISION_GERENCIAL → APROBADO_GERENCIA o DEVUELTO_GERENCIA
+    - APROBADO_GERENCIA → FIRMADO
+    - DEVUELTO_GERENCIA → EN_REVISION_JURIDICA (si requiere) o EN_REVISION_GERENCIAL
+    - FIRMADO → FINALIZADO
+    - PENDIENTE_FINALIZACION → FINALIZADO
+    - FINALIZADO → (final, no más transiciones)
     """
     try:
         id_rol = user_token.id_rol
@@ -213,20 +229,139 @@ def cambiar_estado_documento(
         if not documento:
             raise HTTPException(status_code=404, detail="Documento no encontrado")
         
-        # Cambiar estado
+        # Validar observaciones si es devolución
+        if cambio_estado.nuevo_estado in ['DEVUELTO_JURIDICA', 'DEVUELTO_GERENCIA']:
+            descripcion = (cambio_estado.descripcion_cambio or '').strip()
+            if not descripcion:
+                raise HTTPException(
+                    status_code=400,
+                    detail='Debe ingresar observaciones para devolver el documento'
+                )
+
+        # Solo el creador puede finalizar el documento
+        if cambio_estado.nuevo_estado == 'FINALIZADO':
+            usuario_genera = documento.get('usuario_genera') if isinstance(documento, dict) else documento.usuario_genera
+            if usuario_genera != user_token.id_usuario:
+                raise HTTPException(
+                    status_code=403,
+                    detail='Solo el creador del documento puede finalizarlo'
+                )
+
+        # Cambiar estado (validaciones incluidas en la función)
         crud_documentos.cambiar_estado_documento(
             db, 
             documento_id, 
             cambio_estado.nuevo_estado
         )
-        
-        # Si es FINALIZADO, asignar consecutivo
-        if cambio_estado.nuevo_estado == 'FINALIZADO':
-            consecutivo = crud_documentos.asignar_consecutivo(
-                db, 
-                documento_id, 
-                documento.id_tipo
+
+        # Registrar observaciones si es devolución
+        if cambio_estado.nuevo_estado in ['DEVUELTO_JURIDICA', 'DEVUELTO_GERENCIA']:
+            tipo_obs = 'JURIDICA' if cambio_estado.nuevo_estado == 'DEVUELTO_JURIDICA' else 'GERENCIA'
+            observacion = ObservacionCreate(
+                id_documento=documento_id,
+                id_usuario=user_token.id_usuario,
+                tipo=tipo_obs,
+                descripcion=cambio_estado.descripcion_cambio.strip()
             )
+            crud_observaciones.create_observacion(db, observacion)
+        
+        # Registrar firma si es un estado de aprobación
+        estados_con_firma = ['APROBADO_JURIDICA', 'APROBADO_GERENCIA', 'FINALIZADO']
+        if cambio_estado.nuevo_estado in estados_con_firma:
+            registrar_firma_aprobacion(db, documento_id, user_token.id_usuario)
+        
+        # Si es FINALIZADO, generar PDF final automáticamente
+        if cambio_estado.nuevo_estado == 'FINALIZADO':
+            # Refrescar documento para obtener consecutivo asignado por trigger
+            db.commit()  # Asegurar que el trigger se ejecutó
+            documento_actualizado = crud_documentos.get_documento_by_id(db, documento_id)
+            consecutivo = documento_actualizado.get('consecutivo') if isinstance(documento_actualizado, dict) else documento_actualizado.consecutivo
+            
+            if not consecutivo:
+                raise HTTPException(
+                    status_code=500,
+                    detail="El trigger no asignó consecutivo correctamente"
+                )
+            
+            # Generar PDF final con consecutivo y fecha
+            try:
+                # Obtener plantilla
+                id_plantilla = documento_actualizado.get('id_plantilla') if isinstance(documento_actualizado, dict) else documento_actualizado.id_plantilla
+                plantilla = get_plantilla_by_id(db, id_plantilla)
+                
+                if plantilla:
+                    nombre_archivo = plantilla.get('nombre_archivo')
+                    ruta_almacenamiento = plantilla.get('ruta_almacenamiento')
+                    
+                    if nombre_archivo or ruta_almacenamiento:
+                        # Construir ruta
+                        if ruta_almacenamiento:
+                            plantilla_path = Path(ruta_almacenamiento)
+                        else:
+                            plantilla_path = Path(__file__).parent.parent.parent / "media" / "plantillas" / nombre_archivo
+                        
+                        if plantilla_path.exists():
+                            # Generar context completo CON firmas de aprobadores
+                            context = crud_documentos.generar_context_con_firmas(db, documento_id)
+                            context['consecutivo'] = consecutivo
+                            
+                            # Generar Word final
+                            ruta_word_final = generar_word_desde_plantilla(
+                                str(plantilla_path),
+                                documento_id,
+                                context,
+                                output_filename=f"{documento_id}_final.docx"
+                            )
+
+                            # Guardar el Word final aunque falle la conversion
+                            crud_documentos.update_documento(
+                                db,
+                                documento_id,
+                                DocumentoUpdate(ruta_word_generado=ruta_word_final)
+                            )
+                            
+                            # Convertir a PDF con nombre personalizado
+                            word_filename = ruta_word_final.replace('/static/documentos/', '')
+                            word_full_path = DOCUMENTOS_DIR / word_filename
+                            tipo_documento = documento_actualizado.get('tipo_nombre') if isinstance(documento_actualizado, dict) else documento_actualizado.tipo_nombre
+                            ruta_pdf = convertir_word_a_pdf(
+                                str(word_full_path),
+                                documento_id,
+                                tipo_documento=tipo_documento,
+                                consecutivo=consecutivo
+                            )
+                            
+                            if ruta_pdf:
+                                crud_documentos.update_documento(
+                                    db,
+                                    documento_id,
+                                    DocumentoUpdate(ruta_pdf_final=ruta_pdf)
+                                )
+                                return {
+                                    "message": "Documento finalizado y PDF generado correctamente",
+                                    "nuevo_estado": "FINALIZADO",
+                                    "consecutivo": consecutivo,
+                                    "ruta_word": ruta_word_final,
+                                    "ruta_pdf": ruta_pdf
+                                }
+
+                            return {
+                                "message": "Documento finalizado y Word generado. PDF pendiente",
+                                "nuevo_estado": "FINALIZADO",
+                                "consecutivo": consecutivo,
+                                "ruta_word": ruta_word_final,
+                                "ruta_pdf": None
+                            }
+            except Exception as e:
+                # Si falla la generación de PDF, el documento igual queda FINALIZADO
+                # pero sin PDF
+                return {
+                    "message": f"Documento finalizado pero error al generar PDF: {str(e)}",
+                    "nuevo_estado": "FINALIZADO",
+                    "consecutivo": consecutivo,
+                    "error_pdf": str(e)
+                }
+            
             return {
                 "message": "Documento finalizado correctamente",
                 "nuevo_estado": "FINALIZADO",
@@ -296,15 +431,15 @@ def delete_documento(
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.post("/{documento_id}/generar", status_code=status.HTTP_200_OK)
-def generar_documento_word(
+@router.post("/{documento_id}/generar-word", status_code=status.HTTP_200_OK)
+def generar_word_documento(
     documento_id: int,
-    valores_campos: dict = None,
     db: Session = Depends(get_db),
     user_token: Annotated[UserOut, Depends(get_current_user)] = None
 ):
     """
-    Generar documento Word desde la plantilla asociada.
+    Generar documento Word desde la plantilla con los valores del documento.
+    Se debe llamar antes de enviar a revisión.
     Requiere permiso de actualizar en módulo Documentos.
     """
     try:
@@ -323,35 +458,188 @@ def generar_documento_word(
             raise HTTPException(status_code=404, detail="Documento no encontrado")
         
         # Obtener plantilla
-        plantilla = get_plantilla_by_id(db, documento['id_plantilla'] if isinstance(documento, dict) else documento.id_plantilla)
+        id_plantilla = documento.get('id_plantilla') if isinstance(documento, dict) else documento.id_plantilla
+        plantilla = get_plantilla_by_id(db, id_plantilla)
         if not plantilla:
             raise HTTPException(status_code=404, detail="Plantilla no encontrada")
         
-        # Obtener ruta completa de la plantilla
-        plantilla_ruta = plantilla['ruta_almacenamiento'] if isinstance(plantilla, dict) else plantilla.ruta_almacenamiento
-        if plantilla_ruta.startswith('/static/'):
-            plantilla_ruta = plantilla_ruta.replace('/static/', '')
+        # Verificar que exista archivo de plantilla
+        nombre_archivo = plantilla.get('nombre_archivo')
+        ruta_almacenamiento = plantilla.get('ruta_almacenamiento')
         
-        plantilla_path = os.path.join(os.path.dirname(__file__), '..', '..', 'media', plantilla_ruta)
-        plantilla_path = os.path.normpath(plantilla_path)
+        if not nombre_archivo and not ruta_almacenamiento:
+            raise HTTPException(
+                status_code=400, 
+                detail="La plantilla no tiene archivo asociado. Por favor suba un archivo .docx a media/plantillas/"
+            )
         
-        if not os.path.exists(plantilla_path):
-            raise HTTPException(status_code=404, detail=f"Plantilla no encontrada en {plantilla_path}")
+        # Construir ruta de la plantilla
+        plantilla_path = None
+        if ruta_almacenamiento:
+            # Si ruta_almacenamiento es una ruta web (/static/plantillas/uuid.docx)
+            # convertir a ruta física
+            if ruta_almacenamiento.startswith('/static/plantillas/'):
+                # Extraer nombre del archivo de la ruta web
+                uuid_nombre = ruta_almacenamiento.replace('/static/plantillas/', '')
+                plantilla_path = Path(__file__).parent.parent.parent / "media" / "plantillas" / uuid_nombre
+            else:
+                # Si es una ruta física directa
+                plantilla_path = Path(ruta_almacenamiento)
+        else:
+            # Asumir que está en media/plantillas/ con el nombre original
+            plantilla_path = Path(__file__).parent.parent.parent / "media" / "plantillas" / nombre_archivo
         
-        # Usar valores_campos pasados como parámetro o vacío
-        campos_para_plantilla = valores_campos or {}
+        if not plantilla_path.exists():
+            raise HTTPException(
+                status_code=404,
+                detail=f"Archivo de plantilla no encontrado: {plantilla_path}"
+            )
+        
+        # Generar context con todos los valores
+        context = crud_documentos.generar_context_para_plantilla(db, documento_id, user_token.id_usuario)
         
         # Generar documento Word
-        ruta_word = generar_word_desde_plantilla(plantilla_path, documento_id, campos_para_plantilla)
+        ruta_word = generar_word_desde_plantilla(
+            str(plantilla_path),
+            documento_id,
+            context
+        )
         
-        # Actualizar documento con ruta del Word generado
-        from app.crud import documentos as crud_doc
+        # Actualizar documento con la ruta del Word generado
         update_data = DocumentoUpdate(ruta_word_generado=ruta_word)
-        crud_doc.update_documento(db, documento_id, update_data)
+        crud_documentos.update_documento(db, documento_id, update_data)
         
         return {
             "message": "Documento Word generado correctamente",
-            "ruta_word": ruta_word
+            "ruta_word": ruta_word,
+            "documento_id": documento_id
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/{documento_id}/generar-pdf", status_code=status.HTTP_200_OK)
+def generar_pdf_documento(
+    documento_id: int,
+    db: Session = Depends(get_db),
+    user_token: Annotated[UserOut, Depends(get_current_user)] = None
+):
+    """
+    Generar PDF final del documento (después de FINALIZADO).
+    El documento debe estar en estado FINALIZADO con consecutivo asignado.
+    Requiere permiso de actualizar en módulo Documentos.
+    """
+    try:
+        id_rol = user_token.id_rol
+        
+        # Verificar permisos
+        if not verify_permissions(db, id_rol, modulo, 'actualizar'):
+            raise HTTPException(
+                status_code=403,
+                detail='Usuario no autorizado para generar documentos'
+            )
+        
+        # Obtener documento
+        documento = crud_documentos.get_documento_by_id(db, documento_id)
+        if not documento:
+            raise HTTPException(status_code=404, detail="Documento no encontrado")
+        
+        # Verificar que esté FINALIZADO
+        estado = documento.get('estado') if isinstance(documento, dict) else documento.estado
+        if estado != 'FINALIZADO':
+            raise HTTPException(
+                status_code=400,
+                detail="El documento debe estar FINALIZADO para generar PDF"
+            )
+        
+        # Verificar que tenga consecutivo asignado
+        consecutivo = crud_documentos.obtener_consecutivo_asignado(db, documento_id)
+        if not consecutivo:
+            raise HTTPException(
+                status_code=400,
+                detail="El documento no tiene consecutivo asignado"
+            )
+        
+        # Obtener plantilla
+        id_plantilla = documento.get('id_plantilla') if isinstance(documento, dict) else documento.id_plantilla
+        plantilla = get_plantilla_by_id(db, id_plantilla)
+        if not plantilla:
+            raise HTTPException(status_code=404, detail="Plantilla no encontrada")
+        
+        # Construir ruta de la plantilla
+        nombre_archivo = plantilla.get('nombre_archivo')
+        ruta_almacenamiento = plantilla.get('ruta_almacenamiento')
+        
+        if not nombre_archivo and not ruta_almacenamiento:
+            raise HTTPException(
+                status_code=400,
+                detail="La plantilla no tiene archivo asociado"
+            )
+        
+        plantilla_path = None
+        if ruta_almacenamiento:
+            # Si ruta_almacenamiento es una ruta web (/static/plantillas/uuid.docx)
+            # convertir a ruta física
+            if ruta_almacenamiento.startswith('/static/plantillas/'):
+                # Extraer nombre del archivo de la ruta web
+                uuid_nombre = ruta_almacenamiento.replace('/static/plantillas/', '')
+                plantilla_path = Path(__file__).parent.parent.parent / "media" / "plantillas" / uuid_nombre
+            else:
+                # Si es una ruta física directa
+                plantilla_path = Path(ruta_almacenamiento)
+        else:
+            plantilla_path = Path(__file__).parent.parent.parent / "media" / "plantillas" / nombre_archivo
+        
+        if not plantilla_path.exists():
+            raise HTTPException(
+                status_code=404,
+                detail=f"Archivo de plantilla no encontrado: {plantilla_path}"
+            )
+        
+        # Generar context COMPLETO (con consecutivo y fecha de emisión)
+        context = crud_documentos.generar_context_para_plantilla(db, documento_id, user_token.id_usuario)
+        
+        # Generar documento Word FINAL
+        ruta_word_final = generar_word_desde_plantilla(
+            str(plantilla_path),
+            documento_id,
+            context
+        )
+        
+        # Convertir Word a PDF con nombre personalizado
+        word_filename = ruta_word_final.replace('/static/documentos/', '')
+        word_full_path = DOCUMENTOS_DIR / word_filename
+        
+        tipo_documento = documento.get('tipo_nombre') if isinstance(documento, dict) else documento.tipo_nombre
+        ruta_pdf = convertir_word_a_pdf(
+            str(word_full_path),
+            documento_id,
+            tipo_documento=tipo_documento,
+            consecutivo=consecutivo
+        )
+        
+        if not ruta_pdf:
+            raise HTTPException(
+                status_code=500,
+                detail="Error al convertir documento a PDF. Verifique que LibreOffice esté instalado."
+            )
+        
+        # Actualizar documento con las rutas
+        update_data = DocumentoUpdate(
+            ruta_word_generado=ruta_word_final,
+            ruta_pdf_final=ruta_pdf
+        )
+        crud_documentos.update_documento(db, documento_id, update_data)
+        
+        return {
+            "message": "PDF final generado correctamente",
+            "ruta_word": ruta_word_final,
+            "ruta_pdf": ruta_pdf,
+            "consecutivo": consecutivo,
+            "documento_id": documento_id
         }
     
     except HTTPException:
@@ -388,7 +676,7 @@ def firmar_documento(
             raise HTTPException(status_code=404, detail="Documento no encontrado")
         
         # Validar transición de estado
-        transiciones_validas = crud_documentos.obtener_transiciones_validas(db, documento_id, documento.estado)
+        transiciones_validas = crud_documentos.obtener_transiciones_validas(db, documento_id, documento['estado'])
         if nuevo_estado not in transiciones_validas:
             raise HTTPException(
                 status_code=400,
@@ -396,11 +684,11 @@ def firmar_documento(
             )
         
         # Obtener documento Word generado
-        if not documento.ruta_word_generado:
+        if not documento.get('ruta_word_generado'):
             raise HTTPException(status_code=400, detail="Documento Word aún no ha sido generado")
         
         # Construir ruta completa del Word
-        word_file = documento.ruta_word_generado.replace('/static/', '')
+        word_file = documento.get('ruta_word_generado', '').replace('/static/', '')
         word_path = os.path.join(os.path.dirname(__file__), '..', '..', 'media', word_file)
         word_path = os.path.normpath(word_path)
         
@@ -450,7 +738,7 @@ def firmar_documento(
                 crud_documentos.update_documento(db, documento_id, update_data)
             
             # Asignar consecutivo
-            consecutivo = crud_documentos.asignar_consecutivo(db, documento_id, documento.id_tipo)
+            consecutivo = crud_documentos.asignar_consecutivo(db, documento_id, documento['id_tipo'])
             
             return {
                 "message": "Documento finalizado correctamente",
@@ -501,14 +789,102 @@ def obtener_transiciones_validas(
         if not documento:
             raise HTTPException(status_code=404, detail="Documento no encontrado")
         
-        transiciones = crud_documentos.obtener_transiciones_validas(db, documento_id, documento.estado)
+        estado_actual = documento.get('estado') if isinstance(documento, dict) else documento.estado
+        transiciones = crud_documentos.obtener_transiciones_validas(db, documento_id, estado_actual)
         
         return {
-            "estado_actual": documento.estado,
+            "estado_actual": estado_actual,
             "transiciones_validas": transiciones
         }
     
     except HTTPException:
         raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/{documento_id}/firmas", status_code=status.HTTP_200_OK)
+def obtener_firmas_documento(
+    documento_id: int,
+    db: Session = Depends(get_db),
+    user_token: Annotated[UserOut, Depends(get_current_user)] = None
+):
+    """
+    Obtener todas las firmas digitales de un documento.
+    Muestra el historial de aprobaciones con usuario, cargo y fecha.
+    """
+    try:
+        id_rol = user_token.id_rol
+        
+        # Verificar permisos
+        if not verify_permissions(db, id_rol, modulo, 'seleccionar'):
+            raise HTTPException(
+                status_code=403,
+                detail='Usuario no autorizado'
+            )
+        
+        documento = crud_documentos.get_documento_by_id(db, documento_id)
+        if not documento:
+            raise HTTPException(status_code=404, detail="Documento no encontrado")
+        
+        firmas = get_firmas_by_documento(db, documento_id)
+        
+        return {
+            "documento_id": documento_id,
+            "total_firmas": len(firmas),
+            "firmas": firmas
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/{documento_id}/datos", status_code=status.HTTP_200_OK)
+def get_documento_datos(
+    documento_id: int,
+    db: Session = Depends(get_db),
+    user_token: Annotated[UserOut, Depends(get_current_user)] = None
+):
+    """
+    Obtener datos del documento en formato JSON.
+    Retorna todos los campos necesarios para generar reportes.
+    """
+    try:
+        id_rol = user_token.id_rol
+        
+        # Verificar permisos
+        if not verify_permissions(db, id_rol, modulo, 'seleccionar'):
+            raise HTTPException(
+                status_code=403,
+                detail='Usuario no autorizado para ver documentos'
+            )
+        
+        documento = crud_documentos.get_documento_by_id(db, documento_id)
+        
+        if not documento:
+            raise HTTPException(status_code=404, detail="Documento no encontrado")
+        
+        # Retornar documento completo como JSON
+        return {
+            "id_documento": documento.id_documento,
+            "asunto": documento.asunto,
+            "contenido": documento.contenido,
+            "estado": documento.estado,
+            "requiere_juridica": documento.requiere_juridica,
+            "valores_campos": documento.valores_campos,
+            "fecha_creacion": documento.fecha_creacion.isoformat() if documento.fecha_creacion else None,
+            "fecha_finalizacion": documento.fecha_finalizacion.isoformat() if documento.fecha_finalizacion else None,
+            "consecutivo": documento.consecutivo,
+            "tipo_nombre": documento.tipo_nombre,
+            "plantilla_nombre": documento.plantilla_nombre,
+            "usuario_nombre": documento.usuario_nombre
+        }
+    
+    except HTTPException:
+        raise
+    except SQLAlchemyError as e:
+        raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))

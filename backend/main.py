@@ -21,11 +21,12 @@ app.include_router(tareas_pendientes.router, prefix="/tareas-pendientes", tags=[
 app.include_router(observaciones.router, prefix="/observaciones", tags=["observaciones"])
 app.include_router(firmas_digitales.router, prefix="/firmas-digitales", tags=["firmas-digitales"])
 
-# Servir archivos estáticos (firmas, etc.)
+# Servir archivos estáticos (firmas, reportes, etc.)
 static_dir = Path(__file__).parent / "media"
 if not static_dir.exists():
     static_dir.mkdir(parents=True, exist_ok=True)
 app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+app.mount("/media", StaticFiles(directory=str(static_dir)), name="media")
 
 # Configuración de CORS para permitir todas las solicitudes desde cualquier origen
 app.add_middleware(

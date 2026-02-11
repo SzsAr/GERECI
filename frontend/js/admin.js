@@ -3,7 +3,7 @@
   if (!token) window.location.href = './index.html';
 })();
 
-let modalRol, modalCargo, modalUsuario, modalPlantilla;
+let modalRol, modalCargo, modalUsuario, modalPlantilla, modalUploadPlantilla;
 
 function showSection(section) {
   document.querySelectorAll('.section').forEach(s => s.classList.add('d-none'));
@@ -257,11 +257,11 @@ async function saveCargo() {
 // USUARIOS
 async function loadUsuarios() {
   const tbody = document.querySelector('#tabla-usuarios tbody');
-  tbody.innerHTML = '<tr><td colspan="7" class="text-muted small">Cargando...</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="8" class="text-muted small">Cargando...</td></tr>';
   try {
     const data = await api.request('/users/all');
     if (!data || data.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="7" class="text-muted small">Sin datos</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8" class="text-muted small">Sin datos</td></tr>';
       return;
     }
     tbody.innerHTML = data.map(u => `
@@ -278,6 +278,7 @@ async function loadUsuarios() {
           </div>
         </td>
         <td class="text-end">
+          <button class="btn btn-sm btn-outline-warning me-1" data-pdf-usuario="${u.id_usuario}" title="Descargar PDF"><i class="bi bi-file-pdf"></i></button>
           <button class="btn btn-sm btn-outline-primary me-1" data-edit-usuario="${u.id_usuario}"><i class="bi bi-pencil"></i></button>
           <button class="btn btn-sm btn-outline-danger" data-del-usuario="${u.id_usuario}"><i class="bi bi-trash"></i></button>
         </td>
@@ -286,7 +287,7 @@ async function loadUsuarios() {
     bindUserActions();
     bindUserStateSwitch();
   } catch (err) {
-    tbody.innerHTML = `<tr><td colspan="7" class="text-danger small">Error: ${err.message}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="8" class="text-danger small">Error: ${err.message}</td></tr>`;
   }
 }
 
@@ -309,6 +310,34 @@ function bindUserStateSwitch() {
 }
 
 function bindUserActions() {
+  document.querySelectorAll('[data-pdf-usuario]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.pdfUsuario;
+      try {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="bi bi-hourglass-split"></i>';
+        
+        // Endpoint Jasper eliminado
+        alert('Funcionalidad de PDF temporalmente deshabilitada');
+        return;
+        
+        // Descargar el PDF
+        if (respuesta.pdf_url) {
+          const link = document.createElement('a');
+          link.href = API_BASE + respuesta.pdf_url;
+          link.download = `usuario_${id}.pdf`;
+          link.click();
+          alert('PDF descargado correctamente');
+        }
+      } catch (err) {
+        alert(`Error generando PDF: ${err.message}`);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-file-pdf"></i>';
+      }
+    });
+  });
+
   document.querySelectorAll('[data-del-usuario]').forEach(btn => {
     btn.addEventListener('click', async () => {
       if (!confirm('¿Eliminar usuario?')) return;
@@ -353,20 +382,41 @@ async function loadPlantillas() {
       tbody.innerHTML = '<tr><td colspan="5" class="text-muted small">Sin datos</td></tr>';
       return;
     }
-    tbody.innerHTML = data.map(p => `
+    tbody.innerHTML = data.map(p => {
+      const camposCount = p.campos_json ? Object.keys(p.campos_json).length : 0;
+      const tieneArchivo = p.nombre_archivo ? true : false;
+      const iconoArchivo = tieneArchivo 
+        ? '<i class="bi bi-file-earmark-check text-success"></i>' 
+        : '<i class="bi bi-file-earmark-x text-muted"></i>';
+      const textoArchivo = tieneArchivo 
+        ? `<small class="text-success">Archivo: ${p.nombre_archivo}</small>` 
+        : '<small class="text-muted">Sin archivo</small>';
+      
+      return `
       <tr>
-        <td>${p.nombre}</td>
+        <td>
+          <div>${p.nombre}</div>
+          <div>${iconoArchivo} ${textoArchivo}</div>
+        </td>
         <td>${p.tipo_nombre || p.id_tipo}</td>
-        <td><a href="${p.ruta_almacenamiento ? API_BASE + p.ruta_almacenamiento : '#'}" target="_blank">${p.nombre_archivo || 'Sin archivo'}</a></td>
+        <td><span class="badge bg-info">${camposCount} campos</span></td>
+        <td><span class="badge bg-success">Activa</span></td>
         <td class="text-end">
+          <button class="btn btn-sm ${tieneArchivo ? 'btn-outline-warning' : 'btn-outline-info'} me-1" 
+                  data-upload-plantilla="${p.id}" 
+                  data-tiene-archivo="${tieneArchivo}"
+                  data-nombre-archivo="${p.nombre_archivo || ''}"
+                  title="${tieneArchivo ? 'Reemplazar archivo .docx' : 'Subir archivo .docx'}">
+            <i class="bi ${tieneArchivo ? 'bi-arrow-repeat' : 'bi-file-arrow-up'}"></i>
+          </button>
           <button class="btn btn-sm btn-outline-primary me-1" data-edit-plantilla="${p.id}"><i class="bi bi-pencil"></i></button>
           <button class="btn btn-sm btn-outline-danger" data-del-plantilla="${p.id}"><i class="bi bi-trash"></i></button>
         </td>
       </tr>
-    `).join('');
+    `}).join('');
     bindPlantillaActions();
   } catch (err) {
-    tbody.innerHTML = `<tr><td colspan="6" class="text-danger small">Error: ${err.message}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="5" class="text-danger small">Error: ${err.message}</td></tr>`;
   }
 }
 
@@ -436,7 +486,8 @@ async function loadTiposDocumentos() {
   }
 }
 
-function addCampoInput(key = '') {
+// Todos los campos se crean como tipo 'text' para simplificar UX
+function addCampoInput(nombre = '', tipo = 'text') {
   const container = document.getElementById('plantilla-campos-container');
   const campoId = 'campo-' + Date.now();
   const campoDiv = document.createElement('div');
@@ -444,7 +495,8 @@ function addCampoInput(key = '') {
   campoDiv.id = campoId;
   campoDiv.innerHTML = `
     <div class="col-10">
-      <input type="text" class="form-control form-control-sm campo-key" placeholder="Nombre del campo" value="${key}">
+      <input type="text" class="form-control form-control-sm campo-nombre" placeholder="Nombre del campo (ej: asunto, descripción, número)" value="${nombre}">
+      <input type="hidden" class="campo-tipo" value="text">
     </div>
     <div class="col-2 d-flex justify-content-end">
       <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeCampoInput('${campoId}')">
@@ -455,39 +507,156 @@ function addCampoInput(key = '') {
   container.appendChild(campoDiv);
 }
 
-function removeCampoInput(campoId) {
-  const campo = document.getElementById(campoId);
-  if (campo) campo.remove();
+function removeCampoInput(id) {
+  const el = document.getElementById(id);
+  if (el) el.remove();
 }
 
 function clearCampos() {
   document.getElementById('plantilla-campos-container').innerHTML = '';
 }
 
-function loadCamposFromJSON(camposJSON) {
-  clearCampos();
-  if (camposJSON && typeof camposJSON === 'object') {
-    Object.keys(camposJSON).forEach((key) => {
-      addCampoInput(key);
-    });
-  }
-}
-
 function getCamposAsJSON() {
   const campos = {};
   document.querySelectorAll('.campo-item').forEach(item => {
-    const key = item.querySelector('.campo-key').value.trim();
-    if (key) {
-      campos[key] = '';
+    const nombre = item.querySelector('.campo-nombre').value.trim();
+    const tipo = item.querySelector('.campo-tipo').value; // Siempre será 'text'
+    if (nombre) {
+      campos[nombre] = tipo;
     }
   });
   return Object.keys(campos).length > 0 ? campos : null;
 }
 
+function loadCamposFromJSON(camposJson) {
+  clearCampos();
+  if (camposJson && typeof camposJson === 'object') {
+    Object.entries(camposJson).forEach(([nombre, tipo]) => {
+      addCampoInput(nombre, tipo);
+    });
+  }
+}
+  
+
+async function uploadPlantillaArchivo() {
+  const plantillaId = document.getElementById('upload-plantilla-id').value;
+  const archivo = document.getElementById('upload-plantilla-archivo').files[0];
+  const errBox = document.getElementById('upload-plantilla-error');
+  const btnText = document.getElementById('upload-btn-text');
+  const btnLoading = document.getElementById('upload-btn-loading');
+  const btn = document.getElementById('upload-plantilla-save');
+
+  errBox.classList.add('d-none');
+
+  if (!archivo) {
+    errBox.textContent = 'Debes seleccionar un archivo';
+    errBox.classList.remove('d-none');
+    return;
+  }
+
+  if (!archivo.name.toLowerCase().endsWith('.docx')) {
+    errBox.textContent = 'El archivo debe ser .docx';
+    errBox.classList.remove('d-none');
+    return;
+  }
+
+  try {
+    // Mostrar loading
+    btn.disabled = true;
+    btnText.classList.add('d-none');
+    btnLoading.classList.remove('d-none');
+
+    // Crear FormData para enviar archivo
+    const formData = new FormData();
+    formData.append('archivo', archivo);
+
+    // Hacer request directo con fetch (api.request no soporta FormData bien)
+    const token = localStorage.getItem('token');
+    const baseUrl = api.baseUrl || 'http://localhost:8000';
+    const response = await fetch(
+      `${baseUrl}/plantillas/${plantillaId}/upload-archivo`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
+        body: formData
+      }
+    );
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.detail || `Error al subir archivo (${response.status})`);
+    }
+
+    const result = await response.json();
+
+    // Mostrar éxito
+    errBox.textContent = '';
+    errBox.classList.add('d-none');
+    
+    // Cerrar modal y recargar
+    modalUploadPlantilla.hide();
+    loadPlantillas();
+
+    // Mostrar mensaje de éxito
+    alert('Archivo subido correctamente: ' + result.nombre_archivo);
+
+  } catch (err) {
+    errBox.textContent = err.message;
+    errBox.classList.remove('d-none');
+  } finally {
+    // Esconder loading
+    btn.disabled = false;
+    btnText.classList.remove('d-none');
+    btnLoading.classList.add('d-none');
+  }
+}
+
 function bindPlantillaActions() {
+  // Upload archivo
+  document.querySelectorAll('[data-upload-plantilla]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.uploadPlantilla;
+      const tieneArchivo = btn.dataset.tieneArchivo === 'true';
+      const nombreArchivoActual = btn.dataset.nombreArchivo || '';
+      const row = btn.closest('tr');
+      const nombre = row.querySelector('td:first-child div:first-child').textContent;
+      
+      document.getElementById('upload-plantilla-id').value = id;
+      document.getElementById('upload-plantilla-archivo').value = '';
+      document.getElementById('upload-plantilla-error').classList.add('d-none');
+      
+      // Actualizar el título del modal
+      const modalTitle = tieneArchivo 
+        ? `Reemplazar archivo en: ${nombre}`
+        : `Subir archivo a: ${nombre}`;
+      document.querySelector('#modalUploadPlantilla .modal-title').textContent = modalTitle;
+      
+      // Mostrar información si ya tiene archivo
+      const infoArchivoDiv = document.getElementById('info-archivo-actual');
+      if (tieneArchivo && nombreArchivoActual) {
+        infoArchivoDiv.innerHTML = `
+          <div class="alert alert-warning" role="alert">
+            <i class="bi bi-exclamation-triangle"></i> 
+            <strong>Esta plantilla ya tiene un archivo:</strong> 
+            <code>${nombreArchivoActual}</code>
+            <br><small>Si subes un nuevo archivo, reemplazará el actual.</small>
+          </div>
+        `;
+        infoArchivoDiv.classList.remove('d-none');
+      } else {
+        infoArchivoDiv.innerHTML = '';
+        infoArchivoDiv.classList.add('d-none');
+      }
+      
+      modalUploadPlantilla.show();
+    });
+  });
+
   document.querySelectorAll('[data-del-plantilla]').forEach(btn => {
     btn.addEventListener('click', async () => {
-      if (!confirm('¿Eliminar plantilla?')) return;
+      if (!confirm('¿Eliminar plantilla y su tabla de datos? Esta acción es irreversible.')) return;
       const id = btn.dataset.delPlantilla;
       try {
         await api.request(`/plantillas/${id}`, { method: 'DELETE' });
@@ -505,10 +674,31 @@ function bindPlantillaActions() {
         const plantilla = await api.request(`/plantillas/${id}`);
         document.getElementById('plantilla-id').value = plantilla.id;
         document.getElementById('plantilla-nombre').value = plantilla.nombre;
+        document.getElementById('plantilla-descripcion').value = ''; // Campo descripcion no está en BD
         document.getElementById('plantilla-tipo').value = plantilla.id_tipo;
+        document.getElementById('plantilla-tipo').disabled = true; // No permitir cambiar tipo
         loadCamposFromJSON(plantilla.campos_json);
-        document.getElementById('plantilla-file').value = '';
-        document.getElementById('modalPlantillaTitle').textContent = 'Editar plantilla';
+        
+        // Deshabilitar edición de campos (estructura SQL ya creada)
+        document.querySelectorAll('.campo-nombre, .campo-tipo').forEach(input => {
+          input.disabled = true;
+        });
+        document.querySelectorAll('.campo-item .btn-outline-danger').forEach(btn => {
+          btn.disabled = true;
+          btn.style.opacity = '0.5';
+        });
+        document.getElementById('btn-add-campo').disabled = true;
+        document.getElementById('btn-add-campo').style.opacity = '0.5';
+        
+        // Agregar mensaje informativo
+        const container = document.getElementById('plantilla-campos-container');
+        const infoMsg = document.createElement('div');
+        infoMsg.className = 'alert alert-info alert-sm mt-2';
+        infoMsg.id = 'campos-readonly-msg';
+        infoMsg.innerHTML = '<small><i class="bi bi-info-circle"></i> Los campos no se pueden modificar después de crear la plantilla (estructura de tabla SQL ya generada)</small>';
+        container.appendChild(infoMsg);
+        
+        document.getElementById('modalPlantillaTitle').textContent = 'Editar plantilla (solo nombre y descripción)';
         document.getElementById('plantilla-error').classList.add('d-none');
         modalPlantilla.show();
       } catch (err) {
@@ -522,36 +712,48 @@ async function savePlantilla() {
   const id = document.getElementById('plantilla-id').value;
   const nombre = document.getElementById('plantilla-nombre').value.trim();
   const id_tipo = parseInt(document.getElementById('plantilla-tipo').value);
-  const campos = getCamposAsJSON();
-  const fileInput = document.getElementById('plantilla-file');
-  const file = fileInput.files[0];
+  const descripcion = document.getElementById('plantilla-descripcion').value.trim();
+  const campos_json = getCamposAsJSON();
   const errBox = document.getElementById('plantilla-error');
   errBox.classList.add('d-none');
 
+  // Validaciones
   if (!nombre || !id_tipo) {
     errBox.textContent = 'Nombre y tipo de documento son requeridos';
     errBox.classList.remove('d-none');
     return;
   }
 
-  if (!id && !file) {
-    errBox.textContent = 'Debe seleccionar un archivo Word (.docx) al crear una plantilla';
+  // Solo validar campos si es creación nueva (no edición)
+  if (!id && (!campos_json || Object.keys(campos_json).length === 0)) {
+    errBox.textContent = 'Debe agregar al menos un campo a la plantilla';
     errBox.classList.remove('d-none');
     return;
   }
 
   try {
-    const formData = new FormData();
-    formData.append('nombre', nombre);
-    formData.append('id_tipo', id_tipo);
-    if (campos) formData.append('campos_json', JSON.stringify(campos));
-    if (file) formData.append('file', file);
+    const body = {
+      nombre,
+      id_tipo,
+      campos_json,
+      descripcion: descripcion || null
+    };
 
     if (id) {
-      await api.request(`/plantillas/${id}`, { method: 'PUT', body: formData });
+      // Editar plantilla (solo nombre, descripción, estado)
+      await api.request(`/plantillas/${id}`, { 
+        method: 'PUT', 
+        body: {
+          nombre,
+          descripcion: descripcion || null,
+          estado: 1
+        }
+      });
     } else {
-      await api.request('/plantillas', { method: 'POST', body: formData });
+      // Crear plantilla
+      await api.request('/plantillas', { method: 'POST', body });
     }
+
     modalPlantilla.hide();
     loadPlantillas();
   } catch (err) {
@@ -568,6 +770,7 @@ window.addEventListener('DOMContentLoaded', () => {
   modalCargo = new bootstrap.Modal(document.getElementById('modalCargo'));
   modalUsuario = new bootstrap.Modal(document.getElementById('modalUsuario'));
   modalPlantilla = new bootstrap.Modal(document.getElementById('modalPlantilla'));
+  modalUploadPlantilla = new bootstrap.Modal(document.getElementById('modalUploadPlantilla'));
   
   loadRolesAndCargos();
   loadTiposDocumentos();
@@ -603,14 +806,24 @@ window.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-new-plantilla').addEventListener('click', () => {
     document.getElementById('form-plantilla').reset();
     document.getElementById('plantilla-id').value = '';
-    document.getElementById('plantilla-file').value = '';
     clearCampos();
+    
+    // Habilitar edición de campos y tipo para nueva plantilla
+    document.getElementById('plantilla-tipo').disabled = false;
+    document.getElementById('btn-add-campo').disabled = false;
+    document.getElementById('btn-add-campo').style.opacity = '1';
+    
+    // Eliminar mensaje de campos readonly si existe
+    const msg = document.getElementById('campos-readonly-msg');
+    if (msg) msg.remove();
+    
     document.getElementById('modalPlantillaTitle').textContent = 'Nueva plantilla';
     document.getElementById('plantilla-error').classList.add('d-none');
     modalPlantilla.show();
   });
   document.getElementById('plantilla-save').addEventListener('click', savePlantilla);
   document.getElementById('btn-add-campo').addEventListener('click', () => addCampoInput());
+  document.getElementById('upload-plantilla-save').addEventListener('click', uploadPlantillaArchivo);
 
   loadRoles();
 });

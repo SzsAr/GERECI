@@ -18,12 +18,17 @@
       padding: 0.5rem 0.75rem;
       border-radius: 4px;
     }
+    /* Estados del flujo de documentos */
     .estado-borrador { background-color: #e7e7e7; color: #333; }
-    .estado-revision { background-color: #fff3cd; color: #856404; }
-    .estado-aprobado { background-color: #d1ecf1; color: #0c5460; }
-    .estado-firmado { background-color: #d4edda; color: #155724; }
-    .estado-finalizado { background-color: #d4edda; color: #155724; font-weight: bold; }
-    .estado-devuelto { background-color: #f8d7da; color: #721c24; }
+    .estado-en-revision-juridica { background-color: #fff3cd; color: #856404; }
+    .estado-en-revision-gerencial { background-color: #ffc107; color: #000; }
+    .estado-aprobado-juridica { background-color: #d1ecf1; color: #0c5460; }
+    .estado-aprobado-gerencia { background-color: #17a2b8; color: #fff; }
+    .estado-firmado { background-color: #28a745; color: #fff; font-weight: bold; }
+    .estado-devuelto-juridica { background-color: #f8d7da; color: #721c24; }
+    .estado-devuelto-gerencia { background-color: #dc3545; color: #fff; }
+    .estado-pendiente-finalizacion { background-color: #fd7e14; color: #fff; }
+    .estado-finalizado { background-color: #155724; color: #fff; font-weight: bold; }
     .table-sm { font-size: 0.9rem; }
     .btn-sm { padding: 0.25rem 0.5rem; font-size: 0.85rem; }
     .estado-step { margin-top: 1rem; padding: 1rem; background: #f8f9fa; border-left: 4px solid #007bff; }
@@ -165,27 +170,49 @@
 
           <div class="estado-step" id="ver-estado-info"></div>
 
-          <!-- Sección de campos editables (solo en BORRADOR) -->
+          <!-- Observaciones de devolución -->
+          <div id="section-observaciones-historial" class="d-none mb-3">
+            <h6><i class="bi bi-chat-left-text"></i> Observaciones de devolución</h6>
+            <div id="ver-observaciones-container" class="small"></div>
+          </div>
+
+          <!-- Sección de campos editables (BORRADOR o DEVUELTO) -->
           <div id="section-editar-campos" class="d-none mb-3">
-            <h6>Valores de campos</h6>
+            <h6><i class="bi bi-pencil-square"></i> Editar campos del documento</h6>
+            <div class="alert alert-warning small">
+              <i class="bi bi-exclamation-triangle"></i> Después de editar, el documento Word se regenerará automáticamente con los nuevos valores.
+            </div>
             <div id="ver-campos-container"></div>
             <button type="button" id="btn-guardar-campos" class="btn btn-sm btn-primary mt-2">
-              <i class="bi bi-save"></i> Guardar cambios
+              <i class="bi bi-save"></i> Guardar cambios y regenerar Word
             </button>
           </div>
 
           <!-- Descargas -->
           <div class="row g-2 mb-3">
-            <div class="col-md-6">
+            <div class="col-md-4">
               <a id="link-descargar-word" href="#" class="btn btn-sm btn-info w-100 d-none">
                 <i class="bi bi-file-word"></i> Descargar Word
               </a>
             </div>
-            <div class="col-md-6">
+            <div class="col-md-4">
               <a id="link-descargar-pdf" href="#" class="btn btn-sm btn-danger w-100 d-none">
                 <i class="bi bi-file-pdf"></i> Descargar PDF
               </a>
+              <button id="btn-generar-pdf" type="button" class="btn btn-sm btn-success w-100 d-none">
+                <i class="bi bi-file-earmark-pdf"></i> Generar PDF
+              </button>
             </div>
+            <div class="col-md-4">
+
+            </div>
+          </div>
+
+          <!-- Previsualización del documento -->
+          <div id="section-preview" class="d-none mb-3">
+            <h6>Previsualización del documento</h6>
+            <div id="preview-loading" class="alert alert-info">Generando previsualización...</div>
+            <iframe id="iframe-preview" style="width: 100%; height: 600px; border: 1px solid #ddd; display: none;"></iframe>
           </div>
 
           <!-- Acciones de estado -->

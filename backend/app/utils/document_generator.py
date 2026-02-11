@@ -28,7 +28,8 @@ FIRMAS_DIR.mkdir(parents=True, exist_ok=True)
 def generar_word_desde_plantilla(
     plantilla_path: str,
     documento_id: int,
-    valores_campos: Optional[Dict[str, Any]] = None
+    valores_campos: Optional[Dict[str, Any]] = None,
+    output_filename: Optional[str] = None
 ) -> str:
     """
     Generar un documento Word desde una plantilla usando docxtpl.
@@ -52,9 +53,17 @@ def generar_word_desde_plantilla(
         
         # Renderizar con los valores
         doc_template.render(valores_campos)
+
+        # Reemplazar placeholders en cuadros de texto, parrafos y tablas
+        if valores_campos:
+            _reemplazar_en_container(doc_template.docx, valores_campos)
+            for section in doc_template.docx.sections:
+                _reemplazar_en_container(section.header, valores_campos)
+                _reemplazar_en_container(section.footer, valores_campos)
         
         # Guardar documento generado
-        output_filename = f"{documento_id}_borrador.docx"
+        if not output_filename:
+            output_filename = f"{documento_id}_borrador.docx"
         output_path = DOCUMENTOS_DIR / output_filename
         doc_template.save(str(output_path))
         
@@ -66,6 +75,76 @@ def generar_word_desde_plantilla(
     except Exception as e:
         logger.error(f"Error al generar documento Word: {e}")
         raise Exception(f"Error al generar documento: {str(e)}")
+
+
+def _reemplazar_en_container(container: Any, valores: Dict[str, Any]) -> None:
+    """
+    Reemplaza placeholders {{campo}} dentro de parrafos, tablas y cuadros de texto.
+    """
+    try:
+        _reemplazar_en_parrafos(container, valores)
+        _reemplazar_en_tablas(container, valores)
+        _reemplazar_en_textboxes(container, valores)
+    except Exception as e:
+        logger.warning(f"No se pudo reemplazar texto en el documento: {e}")
+
+
+def _reemplazar_en_parrafos(container: Any, valores: Dict[str, Any]) -> None:
+    for p in getattr(container, "paragraphs", []):
+        _reemplazar_en_runs(p, valores)
+
+
+def _reemplazar_en_tablas(container: Any, valores: Dict[str, Any]) -> None:
+    for table in getattr(container, "tables", []):
+        for row in table.rows:
+            for cell in row.cells:
+                _reemplazar_en_parrafos(cell, valores)
+                _reemplazar_en_tablas(cell, valores)
+
+
+def _reemplazar_en_runs(paragraph: Any, valores: Dict[str, Any]) -> None:
+    runs = getattr(paragraph, "runs", [])
+    if not runs:
+        return
+
+    combined = "".join([r.text or "" for r in runs])
+    for key, value in valores.items():
+        placeholder = f"{{{{{key}}}}}"
+        replacement = "" if value is None else str(value)
+        if placeholder in combined:
+            combined = combined.replace(placeholder, replacement)
+
+    runs[0].text = combined
+    for r in runs[1:]:
+        r.text = ""
+
+
+def _reemplazar_en_textboxes(container: Any, valores: Dict[str, Any]) -> None:
+    try:
+        element = container._element
+    except Exception:
+        return
+
+    try:
+        for txbx in element.xpath(".//w:txbxContent"):
+            texts = txbx.xpath(".//w:t")
+            if not texts:
+                continue
+
+            combined = "".join([t.text or "" for t in texts])
+
+            for key, value in valores.items():
+                placeholder = f"{{{{{key}}}}}"
+                replacement = "" if value is None else str(value)
+                if placeholder in combined:
+                    combined = combined.replace(placeholder, replacement)
+
+            # Reescribir el contenido consolidado en el primer nodo y vaciar el resto
+            texts[0].text = combined
+            for t in texts[1:]:
+                t.text = ""
+    except Exception as e:
+        logger.warning(f"No se pudo reemplazar texto en cuadros: {e}")
 
 
 def incrustar_firma(
@@ -135,7 +214,9 @@ def incrustar_firma(
 
 def convertir_word_a_pdf(
     documento_word_path: str,
-    documento_id: int
+    documento_id: int,
+    tipo_documento: Optional[str] = None,
+    consecutivo: Optional[str] = None
 ) -> Optional[str]:
     """
     Convertir documento Word a PDF usando LibreOffice.
@@ -143,6 +224,8 @@ def convertir_word_a_pdf(
     Args:
         documento_word_path: Ruta al documento Word (.docx)
         documento_id: ID del documento
+        tipo_documento: Nombre del tipo de documento (ej: "RESOLUCION", "CIRCULAR")
+        consecutivo: Consecutivo asignado (ej: "0220")
     
     Returns:
         Ruta relativa del PDF generado, o None si falla la conversión
@@ -180,8 +263,14 @@ def convertir_word_a_pdf(
             logger.warning(f"PDF no generado: {pdf_path}")
             return None
         
-        # Renombrar a formato estándar
-        final_pdf_name = f"{documento_id}_final.pdf"
+        # Renombrar a formato estándar: TIPO_DOCUMENTO_N°_CONSECUTIVO.pdf
+        if tipo_documento and consecutivo:
+            # Limpiar nombre del tipo para archivo
+            tipo_limpio = tipo_documento.upper().replace(" ", "_")
+            final_pdf_name = f"{tipo_limpio}_N°_{consecutivo}.pdf"
+        else:
+            final_pdf_name = f"{documento_id}_final.pdf"
+        
         final_pdf_path = DOCUMENTOS_DIR / final_pdf_name
         pdf_path.rename(final_pdf_path)
         
@@ -202,6 +291,12 @@ def _obtener_ruta_libreoffice() -> Optional[str]:
     Obtener ruta del ejecutable de LibreOffice según el SO.
     """
     import sys
+    import os
+
+    # Permitir sobreescribir la ruta por variable de entorno
+    env_path = os.getenv("LIBREOFFICE_PATH")
+    if env_path and os.path.exists(env_path):
+        return env_path
     
     if sys.platform == "win32":
         # Rutas comunes en Windows

@@ -1,0 +1,103 @@
+# Ejemplo de Plantilla de Resolución - Sistema GERECI
+
+Este es el contenido que debes copiar y pegar en un documento de Microsoft Word (.docx).
+Luego guárdalo como "plantilla_resolucion.docx" y súbelo al sistema.
+
+================================================================================
+
+                            RESOLUCIÓN {{ consecutivo }}
+                                        
+                                        
+Fecha de emisión: {{ fecha }}
+Tipo de documento: {{ tipo_documento }}
+
+================================================================================
+
+ASUNTO: {{ asunto }}
+
+Por medio de la presente y en cumplimiento de las normas vigentes, el/la 
+{{ cargo_solicitante }} {{ nombre_solicitante }} de la unidad {{ unidad }}, 
+presenta la siguiente solicitud:
+
+ANTECEDENTES:
+{{ antecedentes }}
+
+JUSTIFICACIÓN:
+{{ justificacion }}
+
+{% if items %}
+DETALLE DE LA SOLICITUD:
+
+{% for item in items %}
+{{ loop.index }}. {{ item.descripcion }}
+   - Cantidad solicitada: {{ item.cantidad }}
+   - Valor unitario: ${{ item.precio }}
+   - Subtotal: ${{ item.cantidad * item.precio }}
+   {% if item.justificacion %}
+   - Justificación: {{ item.justificacion }}
+   {% endif %}
+
+{% endfor %}
+{% endif %}
+
+{% if considerandos %}
+CONSIDERANDO:
+{% for considerando in considerandos %}
+{{ loop.index }}. {{ considerando }}
+
+{% endfor %}
+{% endif %}
+
+RESUELVE:
+
+{% if aprobado %}
+Artículo 1: APROBAR la presente solicitud según los términos y condiciones 
+establecidos en el presente documento.
+
+Artículo 2: AUTORIZAR el presupuesto correspondiente para la ejecución de 
+lo aprobado.
+
+Artículo 3: NOTIFICAR a las partes interesadas sobre la presente resolución.
+{% else %}
+NO APROBAR la presente solicitud por las siguientes razones:
+
+{{ motivo_rechazo }}
+{% endif %}
+
+{% if observaciones %}
+OBSERVACIONES ADICIONALES:
+{{ observaciones }}
+{% endif %}
+
+{% if recomendaciones %}
+RECOMENDACIONES:
+{% for rec in recomendaciones %}
+- {{ rec }}
+{% endfor %}
+{% endif %}
+
+--------------------------------------------------------------------------------
+
+FIRMAS DE APROBACIÓN:
+
+La presente resolución cuenta con las siguientes aprobaciones:
+
+{% if firmas %}
+{% for firma in firmas %}
+{{ firma.nombre }}
+{{ firma.cargo }}
+Fecha: {{ firma.fecha }}
+
+_________________________
+
+{% endfor %}
+{% endif %}
+
+
+Documento generado por: {{ usuario_nombre }}
+Sistema GERECI - Gestión de Resoluciones y Circulares
+Fecha de generación: {{ fecha }}
+
+================================================================================
+            Este documento es de carácter oficial y tiene validez legal
+================================================================================

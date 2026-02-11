@@ -105,12 +105,17 @@
             <table class="table align-middle" id="tabla-plantillas">
               <thead>
                 <tr>
-                  <th>Nombre</th><th>Tipo</th><th>Archivo</th><th class="text-end">Acciones</th>
+                  <th>Nombre</th>
+                  <th>Tipo Documento</th>
+                  <th>Campos</th>
+                  <th>Estado</th>
+                  <th class="text-end">Acciones</th>
                 </tr>
               </thead>
               <tbody></tbody>
             </table>
           </div>
+          <div id="app-footer"></div>
         </div>
       </main>
     </div>
@@ -229,11 +234,11 @@
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
         <div class="modal-body">
-          <form id="form-plantilla" enctype="multipart/form-data">
+          <form id="form-plantilla">
             <input type="hidden" id="plantilla-id">
             <div class="mb-3">
-              <label class="form-label">Nombre</label>
-              <input type="text" class="form-control" id="plantilla-nombre" required>
+              <label class="form-label">Nombre de la plantilla</label>
+              <input type="text" class="form-control" id="plantilla-nombre" placeholder="Ej: Circular Normativa Q1" required>
             </div>
             <div class="mb-3">
               <label class="form-label">Tipo de documento</label>
@@ -242,9 +247,8 @@
               </select>
             </div>
             <div class="mb-3">
-              <label class="form-label">Archivo Word (.docx)</label>
-              <input type="file" class="form-control" id="plantilla-file" accept=".docx">
-              <small class="form-text text-muted">Opcional al editar. Máx 5MB</small>
+              <label class="form-label">Descripción</label>
+              <textarea class="form-control" id="plantilla-descripcion" rows="2" placeholder="Descripción opcional"></textarea>
             </div>
             <div class="mb-3">
               <label class="form-label">Campos de la plantilla</label>
@@ -254,7 +258,7 @@
               <button type="button" class="btn btn-sm btn-outline-secondary mt-2" id="btn-add-campo">
                 <i class="bi bi-plus-circle"></i> Agregar campo
               </button>
-              <small class="form-text text-muted d-block mt-1">Solo escribe el nombre del campo; el sistema usará {{campo}} dentro del Word automáticamente</small>
+              <small class="form-text text-muted d-block mt-1">Define los campos de texto que tendrá esta plantilla (sin límite de caracteres)</small>
             </div>
           </form>
           <div id="plantilla-error" class="text-danger small mt-2 d-none"></div>
@@ -262,6 +266,49 @@
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
           <button type="button" class="btn btn-primary" id="plantilla-save">Guardar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Upload Archivo Plantilla -->
+  <div class="modal fade" id="modalUploadPlantilla" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Subir archivo .docx a plantilla</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="alert alert-info" role="alert">
+            <small><i class="bi bi-info-circle"></i> Sube un archivo Word (.docx) con placeholders Jinja2 para rellenar dinámicamente.</small>
+          </div>
+          <div id="info-archivo-actual" class="d-none"></div>
+          <form id="form-upload-plantilla">
+            <input type="hidden" id="upload-plantilla-id">
+            <div class="mb-3">
+              <label class="form-label">Seleccionar archivo .docx</label>
+              <input type="file" class="form-control" id="upload-plantilla-archivo" accept=".docx" required>
+              <small class="form-text text-muted d-block mt-1">Solo se aceptan archivos .docx (Word 2007+). Máximo 10MB.</small>
+            </div>
+            <div class="alert alert-secondary" role="alert">
+              <small><strong>¿Cómo preparar tu plantilla?</strong></small>
+              <ul class="mb-0 mt-2 small">
+                <li>Diseña el documento en Word con el formato que desees</li>
+                <li>Reemplaza valores fijos con variables: <code>{{ variable }}</code></li>
+                <li>Ejemplo: <code>Resolución {{ consecutivo }}</code></li>
+                <li>Para listas: <code>{% for item in items %}{{ item.nombre }}{% endfor %}</code></li>
+              </ul>
+            </div>
+          </form>
+          <div id="upload-plantilla-error" class="text-danger small mt-2 d-none"></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+          <button type="button" class="btn btn-primary" id="upload-plantilla-save">
+            <span id="upload-btn-text"><i class="bi bi-cloud-upload"></i> Subir</span>
+            <span id="upload-btn-loading" class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+          </button>
         </div>
       </div>
     </div>

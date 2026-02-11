@@ -63,6 +63,35 @@ function initDocumentosPage() {
   document.getElementById('btn-confirmar-firma').addEventListener('click', () => {
     confirmarFirma();
   });
+  
+  document.getElementById('btn-generar-pdf').addEventListener('click', () => {
+    generarPdfFinal();
+  });
+}
+
+async function generarPdfFinal() {
+  if (!documentoActual || !documentoActual.id) return;
+  if (!confirm('¿Generar PDF final del documento?')) return;
+
+  try {
+    const resp = await api.request(`/documentos/${documentoActual.id}/generar-pdf`, {
+      method: 'POST'
+    });
+
+    // Refrescar datos
+    documentoActual = await api.request(`/documentos/${documentoActual.id}`);
+
+    if (documentoActual.ruta_pdf_final) {
+      alert('PDF final generado correctamente');
+    } else {
+      alert('PDF solicitado, pero aún no se generó. Intente de nuevo.');
+    }
+
+    modalVerDoc.hide();
+    cargarDocumentos();
+  } catch (err) {
+    alert(`Error al generar PDF: ${err.message}`);
+  }
 }
 
 function bindMenu() {
@@ -131,8 +160,14 @@ async function cargarDocumentos() {
     
     tbody.innerHTML = docs.map(d => {
       const estadoClase = `estado-${d.estado.toLowerCase().replace(/_/g, '-')}`;
-      const linkWord = d.ruta_word_generado ? `<a href="${API_BASE}${d.ruta_word_generado}" target="_blank" class="btn btn-sm btn-info"><i class="bi bi-file-word"></i></a>` : '';
-      const linkPdf = d.ruta_pdf_final ? `<a href="${API_BASE}${d.ruta_pdf_final}" target="_blank" class="btn btn-sm btn-danger"><i class="bi bi-file-pdf"></i></a>` : '';
+      const linkWord = (d.ruta_word_generado && d.estado !== 'FINALIZADO')
+        ? `<a href="${API_BASE}${d.ruta_word_generado}" target="_blank" class="btn btn-sm btn-info"><i class="bi bi-file-word"></i></a>`
+        : '';
+      const linkPdf = d.ruta_pdf_final
+        ? `<a href="${API_BASE}${d.ruta_pdf_final}" target="_blank" class="btn btn-sm btn-danger"><i class="bi bi-file-pdf"></i></a>`
+        : (d.estado === 'FINALIZADO'
+          ? `<button class="btn btn-sm btn-outline-danger" disabled title="PDF en proceso"><i class="bi bi-file-pdf"></i></button>`
+          : '');
       
       return `
         <tr>
@@ -221,12 +256,14 @@ async function cargarCamposPlantilla() {
   container.innerHTML = '';
   
   if (plantilla.campos_json && typeof plantilla.campos_json === 'object') {
+    // Mantener el orden de inserción de los campos
     const campos = Object.keys(plantilla.campos_json);
     if (campos.length > 0) {
       camposSection.style.display = 'block';
-      campos.forEach(key => {
+      // Iterar en el mismo orden que fueron creados
+      for (const key of campos) {
         agregarCampoInput('nuevo-campos-container', key, plantilla.campos_json[key]);
-      });
+      }
     } else {
       camposSection.style.display = 'none';
     }
@@ -289,7 +326,7 @@ async function generarDocumento() {
   }
   
   try {
-    // Crear documento
+    // Crear documento (se guarda en tabla dinámica automáticamente)
     const body = {
       id_tipo: plantilla.id_tipo,
       id_plantilla: plantillaId,
@@ -298,16 +335,11 @@ async function generarDocumento() {
     };
     
     const respuesta = await api.request('/documentos/create', { method: 'POST', body });
-    const docId = respuesta.documento_id;
     
-    // Generar Word desde plantilla, enviando los valores de los campos
-    await api.request(`/documentos/${docId}/generar`, { 
-      method: 'POST',
-      body: { valores_campos: campos }
-    });
-    
+    // Documento creado exitosamente
     modalNuevoDoc.hide();
     cargarDocumentos();
+    
   } catch (err) {
     errBox.textContent = err.message;
     errBox.classList.remove('d-none');
@@ -339,27 +371,88 @@ async function verDocumento(docId) {
       ${documentoActual.consecutivo ? `<br><strong>Consecutivo: ${documentoActual.consecutivo}</strong>` : ''}
     `;
     
-    // Descargas
+    // Descargas y generación de PDF
     const linkWord = document.getElementById('link-descargar-word');
     const linkPdf = document.getElementById('link-descargar-pdf');
-    if (documentoActual.ruta_word_generado) {
+    const btnGenerarPdf = document.getElementById('btn-generar-pdf');
+    const sectionPreview = document.getElementById('section-preview');
+    const previewLoading = document.getElementById('preview-loading');
+    const iframePreview = document.getElementById('iframe-preview');
+    
+    // Generar Word si no existe
+    if (!documentoActual.ruta_word_generado && documentoActual.estado !== 'BORRADOR') {
+      try {
+        sectionPreview.classList.remove('d-none');
+        previewLoading.classList.remove('d-none');
+        iframePreview.style.display = 'none';
+        
+        const respWordGen = await api.request(`/documentos/${docId}/generar-word`, { method: 'POST' });
+        
+        // Refrescar datos del documento
+        documentoActual = await api.request(`/documentos/${docId}`);
+      } catch (err) {
+        console.warn('No se pudo generar Word automáticamente:', err);
+      }
+    }
+    
+    if (documentoActual.ruta_word_generado && documentoActual.estado !== 'FINALIZADO') {
       linkWord.href = API_BASE + documentoActual.ruta_word_generado;
       linkWord.classList.remove('d-none');
     } else {
       linkWord.classList.add('d-none');
     }
+    
     if (documentoActual.ruta_pdf_final) {
       linkPdf.href = API_BASE + documentoActual.ruta_pdf_final;
       linkPdf.classList.remove('d-none');
+      btnGenerarPdf.classList.add('d-none');
+      
+      // Mostrar previsualización del PDF
+      sectionPreview.classList.remove('d-none');
+      previewLoading.classList.add('d-none');
+      iframePreview.style.display = 'block';
+      iframePreview.src = API_BASE + documentoActual.ruta_pdf_final;
+    } else if (documentoActual.ruta_word_generado && 
+               (documentoActual.estado !== 'BORRADOR' && 
+                documentoActual.estado !== 'DEVUELTO_JURIDICA' && 
+                documentoActual.estado !== 'DEVUELTO_GERENCIA')) {
+      // Mostrar previsualización con mensaje para estados en revisión/aprobación
+      sectionPreview.classList.remove('d-none');
+      previewLoading.innerHTML = '<div class="alert alert-info"><i class="bi bi-file-word"></i> Documento Word generado. Puede descargarlo con el botón arriba.</div>';
+      previewLoading.classList.remove('d-none');
+      iframePreview.style.display = 'none';
+      linkPdf.classList.add('d-none');
+      
+      // Mostrar botón de generar PDF si está FINALIZADO y no hay PDF
+      if (documentoActual.estado === 'FINALIZADO') {
+        btnGenerarPdf.classList.remove('d-none');
+      } else {
+        btnGenerarPdf.classList.add('d-none');
+      }
     } else {
       linkPdf.classList.add('d-none');
+      sectionPreview.classList.add('d-none');
+      // Mostrar botón de generar PDF si está FINALIZADO y no hay PDF
+      if (documentoActual.estado === 'FINALIZADO') {
+        btnGenerarPdf.classList.remove('d-none');
+      } else {
+        btnGenerarPdf.classList.add('d-none');
+      }
     }
     
     // Limpiar secciones
     document.getElementById('section-editar-campos').classList.add('d-none');
     document.getElementById('section-acciones').classList.add('d-none');
     document.getElementById('section-observaciones').classList.add('d-none');
+    document.getElementById('section-observaciones-historial').classList.add('d-none');
     document.getElementById('ver-doc-error').classList.add('d-none');
+    document.getElementById('section-preview').classList.add('d-none');
+    
+    // Mostrar campos editables si está DEVUELTO
+    if (documentoActual.estado === 'DEVUELTO_JURIDICA' || documentoActual.estado === 'DEVUELTO_GERENCIA') {
+      await cargarObservacionesDocumento(documentoActual);
+      await cargarCamposParaEditar(documentoActual);
+    }
     
     // Obtener transiciones válidas
     try {
@@ -381,6 +474,17 @@ function mostrarAccionesDisponibles(transiciones) {
   const sectionObs = document.getElementById('section-observaciones');
   const sectionFirma = document.getElementById('section-firma');
   
+  // Obtener rol actual del usuario
+  let usuarioActual = null;
+  try {
+    const userStr = localStorage.getItem('user');
+    if (userStr) {
+      usuarioActual = JSON.parse(userStr);
+    }
+  } catch (e) {
+    console.warn('No se pudo obtener datos del usuario');
+  }
+  
   // Ocultar todas las acciones primero
   document.getElementById('btn-enviar-revision').classList.add('d-none');
   document.getElementById('btn-aprobar').classList.add('d-none');
@@ -397,27 +501,55 @@ function mostrarAccionesDisponibles(transiciones) {
   sectionObs.classList.add('d-none');
   sectionFirma.classList.add('d-none');
   
-  // Mostrar botones según las transiciones disponibles
+  // Mostrar botones según las transiciones disponibles Y rol del usuario
   const estado = documentoActual.estado;
+  const idRol = usuarioActual ? usuarioActual.id_rol : null;
+  
+  // Flujo: BORRADOR → EN_REVISION_JURIDICA → EN_REVISION_GERENCIAL → FIRMADO → FINALIZADO
+  // Las aprobaciones (APROBADO_JURIDICA, APROBADO_GERENCIA) se hacen automáticamente
   
   if (estado === 'BORRADOR') {
+    // Cualquiera puede enviar documento a revisión
     document.getElementById('btn-enviar-revision').classList.remove('d-none');
-  } else if (estado === 'EN_REVISION_JURIDICA' || estado === 'EN_REVISION_GERENCIAL') {
-    if (transiciones.includes('APROBADO_JURIDICA') || transiciones.includes('APROBADO_GERENCIA')) {
-      document.getElementById('btn-aprobar').classList.remove('d-none');
+  } else if (estado === 'EN_REVISION_JURIDICA') {
+    // Solo rol 3 (Jurídica) puede aprobar o devolver
+    if (idRol === 3) {
+      if (transiciones.includes('APROBADO_JURIDICA')) {
+        document.getElementById('btn-aprobar').classList.remove('d-none');
+      }
+      if (transiciones.includes('DEVUELTO_JURIDICA')) {
+        document.getElementById('btn-devolver').classList.remove('d-none');
+      }
     }
-    if (transiciones.includes('DEVUELTO_JURIDICA') || transiciones.includes('DEVUELTO_GERENCIA')) {
-      document.getElementById('btn-devolver').classList.remove('d-none');
+  } else if (estado === 'EN_REVISION_GERENCIAL') {
+    // Solo rol 2 (Gerencia) puede aprobar o devolver
+    if (idRol === 2) {
+      if (transiciones.includes('APROBADO_GERENCIA')) {
+        document.getElementById('btn-aprobar').classList.remove('d-none');
+      }
+      if (transiciones.includes('DEVUELTO_GERENCIA')) {
+        document.getElementById('btn-devolver').classList.remove('d-none');
+      }
     }
-  } else if (estado === 'APROBADO_JURIDICA' || estado === 'APROBADO_GERENCIA') {
-    if (transiciones.includes('FIRMADO')) {
-      document.getElementById('btn-firmar').classList.remove('d-none');
+  } else if (estado === 'DEVUELTO_JURIDICA') {
+    // Rol 1/4 (Unidad) puede corregir y reenviar
+    if (idRol === 1 || idRol === 4) {
+      if (transiciones.includes('EN_REVISION_JURIDICA')) {
+        document.getElementById('btn-enviar-revision').classList.remove('d-none');
+      }
     }
-    if (estado === 'APROBADO_GERENCIA' && transiciones.includes('DEVUELTO_GERENCIA')) {
-      document.getElementById('btn-devolver').classList.remove('d-none');
+  } else if (estado === 'DEVUELTO_GERENCIA') {
+    // Rol 1/4 (Unidad) puede corregir y reenviar
+    if (idRol === 1 || idRol === 4) {
+      if (transiciones.includes('EN_REVISION_GERENCIAL') || transiciones.includes('EN_REVISION_JURIDICA')) {
+        document.getElementById('btn-enviar-revision').classList.remove('d-none');
+      }
     }
   } else if (estado === 'FIRMADO' || estado === 'PENDIENTE_FINALIZACION') {
-    if (transiciones.includes('FINALIZADO')) {
+    // Solo el creador puede finalizar
+    const usuarioCreador = documentoActual ? documentoActual.usuario_genera : null;
+    const usuarioId = usuarioActual ? usuarioActual.id_usuario : null;
+    if (transiciones.includes('FINALIZADO') && usuarioCreador && usuarioId && usuarioCreador === usuarioId) {
       document.getElementById('btn-finalizar').classList.remove('d-none');
     }
   }
@@ -467,12 +599,16 @@ async function enviarARevision() {
     const transiciones = await api.request(`/documentos/${documentoActual.id}/transiciones`);
     const siguienteEstado = transiciones.transiciones_validas[0];
     
+    if (!siguienteEstado) {
+      throw new Error('No hay estados disponibles para este documento');
+    }
+    
     await api.request(`/documentos/${documentoActual.id}/estado`, {
       method: 'PUT',
       body: { nuevo_estado: siguienteEstado, descripcion_cambio: 'Enviado a revisión' }
     });
     
-    alert('Documento enviado a revisión');
+    alert(`Documento enviado a ${siguienteEstado.replace(/_/g, ' ')}`);
     modalVerDoc.hide();
     cargarDocumentos();
   } catch (err) {
@@ -496,7 +632,11 @@ async function aprobarDocumento() {
       body: { nuevo_estado: siguienteEstado, descripcion_cambio: 'Documento aprobado' }
     });
     
-    alert('Documento aprobado');
+    // Recargar documento para mostrar el estado final (puede haber transición automática)
+    const docActualizado = await api.request(`/documentos/${documentoActual.id}`);
+    documentoActual = docActualizado;
+    
+    alert(`Documento aprobado. Estado actual: ${documentoActual.estado.replace(/_/g, ' ')}`);
     modalVerDoc.hide();
     cargarDocumentos();
   } catch (err) {
@@ -575,10 +715,173 @@ async function devolverDocumento() {
   }
 }
 
-async function guardarCamposDocumento() {
-  // Esta función podría guardar campos dinámicos del documento
-  // Por ahora solo muestra un mensaje
-  alert('Funcionalidad en desarrollo');
+async function cargarCamposParaEditar(documento) {
+  try {
+    const sectionEditar = document.getElementById('section-editar-campos');
+    const container = document.getElementById('ver-campos-container');
+    
+    // Obtener campos de la plantilla
+    const plantilla = await api.request(`/plantillas/${documento.id_plantilla}`);
+    
+    if (!plantilla.campos_json || typeof plantilla.campos_json !== 'object' || Object.keys(plantilla.campos_json).length === 0) {
+      container.innerHTML = '<p class="text-muted">Esta plantilla no tiene campos definidos.</p>';
+      sectionEditar.classList.remove('d-none');
+      return;
+    }
+    
+    // Construir formulario con los campos
+    let html = '<div class="row g-3">';
+    
+    // Iterar sobre los campos (campos_json es un objeto {'nombre_campo': 'tipo_dato'})
+    for (const [nombre_campo, tipo_dato] of Object.entries(plantilla.campos_json)) {
+      const valor = documento.valores_campos && documento.valores_campos[nombre_campo] 
+        ? documento.valores_campos[nombre_campo] 
+        : '';
+      
+      let inputHtml = '';
+      const tipoUpper = tipo_dato.toUpperCase();
+      
+      // Generar input según tipo de dato
+      if (tipoUpper === 'TEXT') {
+        inputHtml = `<textarea 
+            class="form-control form-control-sm campo-editable" 
+            name="${nombre_campo}" 
+            rows="3"
+          >${valor}</textarea>`;
+      } else if (tipoUpper === 'VARCHAR') {
+        inputHtml = `<input 
+            type="text" 
+            class="form-control form-control-sm campo-editable" 
+            name="${nombre_campo}" 
+            value="${valor}"
+          />`;
+      } else if (tipoUpper === 'INT' || tipoUpper === 'DECIMAL' || tipoUpper === 'FLOAT') {
+        inputHtml = `<input 
+            type="number" 
+            step="${tipoUpper === 'INT' ? '1' : '0.01'}"
+            class="form-control form-control-sm campo-editable" 
+            name="${nombre_campo}" 
+            value="${valor}"
+          />`;
+      } else if (tipoUpper === 'DATE') {
+        inputHtml = `<input 
+            type="date" 
+            class="form-control form-control-sm campo-editable" 
+            name="${nombre_campo}" 
+            value="${valor}"
+          />`;
+      } else if (tipoUpper === 'DATETIME') {
+        inputHtml = `<input 
+            type="datetime-local" 
+            class="form-control form-control-sm campo-editable" 
+            name="${nombre_campo}" 
+            value="${valor}"
+          />`;
+      } else {
+        inputHtml = `<input 
+            type="text" 
+            class="form-control form-control-sm campo-editable" 
+            name="${nombre_campo}" 
+            value="${valor}"
+          />`;
+      }
+      
+      html += `
+        <div class="col-md-6">
+          <label class="form-label small fw-semibold">
+            ${nombre_campo}
+            <small class="text-muted">(${tipo_dato})</small>
+          </label>
+          ${inputHtml}
+        </div>
+      `;
+    }
+    
+    html += '</div>';
+    container.innerHTML = html;
+    sectionEditar.classList.remove('d-none');
+    
+  } catch (err) {
+    console.error('Error al cargar campos:', err);
+    alert('Error al cargar campos editables');
+  }
 }
 
-document.addEventListener('layout:navbarReady', bindLogout);
+async function cargarObservacionesDocumento(documento) {
+  try {
+    const sectionObs = document.getElementById('section-observaciones-historial');
+    const container = document.getElementById('ver-observaciones-container');
+    
+    const observaciones = await api.request(`/observaciones/documento/${documento.id}`);
+    
+    if (!observaciones || observaciones.length === 0) {
+      container.innerHTML = '<p class="text-muted">No hay observaciones registradas.</p>';
+      sectionObs.classList.remove('d-none');
+      return;
+    }
+    
+    const items = observaciones.map(obs => {
+      const fecha = obs.fecha ? new Date(obs.fecha).toLocaleString('es-ES') : '';
+      return `
+        <div class="border rounded p-2 mb-2">
+          <div class="d-flex justify-content-between">
+            <span class="badge bg-secondary">${obs.tipo}</span>
+            <small class="text-muted">${fecha}</small>
+          </div>
+          <div class="mt-1">${obs.descripcion}</div>
+        </div>
+      `;
+    }).join('');
+    
+    container.innerHTML = items;
+    sectionObs.classList.remove('d-none');
+  } catch (err) {
+    console.warn('No se pudieron cargar observaciones:', err);
+  }
+}
+
+async function guardarCamposDocumento() {
+  try {
+    if (!documentoActual) return;
+    
+    // Recopilar valores de los campos
+    const campos = document.querySelectorAll('.campo-editable');
+    const valores_campos = {};
+    
+    campos.forEach(campo => {
+      valores_campos[campo.name] = campo.value;
+    });
+    
+    console.log('Guardando valores_campos:', valores_campos);
+    
+    // Validar que hay campos
+    if (Object.keys(valores_campos).length === 0) {
+      alert('No hay campos para actualizar');
+      return;
+    }
+    
+    // Actualizar documento
+    const response = await api.request(`/documentos/${documentoActual.id}`, {
+      method: 'PUT',
+      body: { valores_campos }
+    });
+    
+    console.log('Respuesta actualización:', response);
+    alert('Campos actualizados correctamente');
+    
+    // Regenerar Word con nuevos datos
+    try {
+      await api.request(`/documentos/${documentoActual.id}/generar-word`, { method: 'POST' });
+    } catch (err) {
+      console.warn('No se pudo regenerar Word:', err);
+    } finally {
+      // Refrescar documento para mostrar acciones disponibles
+      await verDocumento(documentoActual.id);
+    }
+    
+  } catch (err) {
+    console.error('Error completo:', err);
+    alert(`Error al guardar campos: ${err.message}`);
+  }
+}
+
