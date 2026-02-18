@@ -3,19 +3,51 @@
 ## 📋 Resumen ejecutivo
 Se implementó completamente el módulo de Documentos con flujo de creación → revisiones (jurídica/gerencia) → firmas → finalización con generación de PDF y asignación automática de consecutivos.
 
+**ÚLTIMA ACTUALIZACIÓN:** Limpieza automática de archivos `.docx` cuando se finaliza o elimina un documento.
+
 ---
 
 ## 📁 Archivos modificados
 
-### Backend
+### Backend - LOTES RECIENTES
 
-#### 1. `backend/app/schemas/documentos.py` ✏️
+#### 0. `backend/app/utils/document_generator.py` ✏️ (LIMPIEZA DE ARCHIVOS)
+**Cambios:**
+- **NUEVA función:** `eliminar_archivo_documento(documento_id, ruta_relativa)`
+  - Elimina `.docx` temporales de `media/documentos/`
+  - Intenta patrones comunes: `{id}_borrador.docx`, `{id}_final.docx`, etc.
+  - Manejo robusto de errores
+  - Retorna `bool` indicando si se eliminó algo
+
+#### 1. `backend/app/router/documentos.py` ✏️ (LIMPIEZA DE ARCHIVOS)
+**Cambios:**
+- Agregó import: `eliminar_archivo_documento`
+- **Endpoint `PUT /{documento_id}/estado` - finalización:**
+  - Ahora elimina `.docx` después de generar PDF exitosamente
+  - Registra en logs si la eliminación fue exitosa
+  - No interrumpe flujo si falla eliminación
+  
+- **Endpoint `PUT /{documento_id}/estado` - devoluciones:**
+  - Ahora elimina `.docx` cuando se devuelve a DEVUELTO_JURIDICA o DEVUELTO_GERENCIA
+  - Permite que el documento se edite nuevamente sin archivos viejos
+  - Facilita el testing y limpieza de documentos
+  
+- **Endpoint `DELETE /{documento_id}` - eliminación:**
+  - Ahora permite eliminar documentos en estado BORRADOR, DEVUELTO_JURIDICA, DEVUELTO_GERENCIA
+  - Obtiene ruta ANTES de borrar de BD
+  - Intenta eliminar archivos DESPUÉS del DELETE en BD
+  - Manejo robusto si falla eliminación
+  - Mejora: Usuario puede descartar documentos rechazados sin necesidad de volver a BORRADOR
+
+### Backend - IMPLEMENTACIÓN ANTERIOR
+
+#### 2. `backend/app/schemas/documentos.py` ✏️
 **Cambios:**
 - Agregó campo `valores_campos: Optional[Dict[str, Any]]` a `DocumentoCreate`
 - Agregó campo `valores_campos` a `DocumentoUpdate`
 - Agregó campos `tipo_nombre`, `plantilla_nombre`, `usuario_nombre` a `DocumentoOut` (para JOINs)
 
-#### 2. `backend/app/crud/documentos.py` ✏️
+#### 3. `backend/app/crud/documentos.py` ✏️
 **Cambios:**
 - Mejoró `get_documento_by_id()`: Añadió JOINs con tipos_documentos, plantillas, usuarios
 - Mejoró `get_all_documentos()`: Añadió JOINs con tipos_documentos, plantillas, usuarios
@@ -23,7 +55,7 @@ Se implementó completamente el módulo de Documentos con flujo de creación →
 - **NUEVA función:** `obtener_transiciones_validas()`: Retorna estados válidos según estado actual y requiere_juridica
 - Mejoró `necesita_revision_juridica()`: Ahora retorna bool correctamente
 
-#### 3. `backend/app/router/documentos.py` ✏️
+#### 4. `backend/app/router/documentos.py` (CAMBIOS ANTERIORES - VER ARRIBA PARA ÚLTIMAS ACTUALIZACIONES) ✏️
 **Cambios:**
 - Añadió imports para archivos, FormData, rutas
 - **NUEVO endpoint:** `POST /documentos/{id}/generar`
@@ -41,13 +73,10 @@ Se implementó completamente el módulo de Documentos con flujo de creación →
   - Retorna estados válidos desde el estado actual
   - Usado por frontend para mostrar botones de acción
 
-#### 4. `backend/app/utils/document_generator.py` 🆕
+#### 5. `backend/app/utils/document_generator.py` 🆕 (ARCHIVO ANTERIOR)
 **ARCHIVO NUEVO**
 
 Contiene utilidades para:
-- **`generar_word_desde_plantilla()`**: Renderiza plantilla Word con docxtpl
-- **`incrustar_firma()`**: Añade imagen + nombre + cargo al Word
-- **`convertir_word_a_pdf()`**: Convierte usando LibreOffice CLI
 - **`guardar_firma_usuario()`**: Almacena imagen de firma en `/static/firmas/`
 - **`_obtener_ruta_libreoffice()`**: Detecta LibreOffice automáticamente
 

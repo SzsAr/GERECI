@@ -6,6 +6,7 @@
 let modalNuevoDoc, modalVerDoc;
 let documentoActual = null;
 let plantillasData = []; // Almacenar datos completos de plantillas
+let documentosCache = []; // Almacenar documentos para filtrado local
 
 function initDocumentosPage() {
   modalNuevoDoc = new bootstrap.Modal(document.getElementById('modalNuevoDoc'));
@@ -20,7 +21,13 @@ function initDocumentosPage() {
     abrirModalNuevoDoc();
   });
   
-  document.getElementById('btn-filtrar').addEventListener('click', () => {
+  // Filtrado en tiempo real por asunto
+  document.getElementById('filtro-asunto').addEventListener('input', () => {
+    filtrarDocumentosLocal();
+  });
+  
+  // Filtrado por estado
+  document.getElementById('filtro-estado').addEventListener('change', () => {
     cargarDocumentos();
   });
   
@@ -139,7 +146,7 @@ async function cargarTiposYPlantillas() {
 
 async function cargarDocumentos() {
   const estado = document.getElementById('filtro-estado').value;
-  const asunto = document.getElementById('filtro-asunto').value.trim();
+  document.getElementById('filtro-asunto').value = ''; // Limpiar búsqueda de asunto
   const tbody = document.querySelector('#tabla-documentos');
   
   tbody.innerHTML = '<tr><td colspan="8" class="text-muted text-center py-3">Cargando...</td></tr>';
@@ -153,44 +160,70 @@ async function cargarDocumentos() {
     
     const docs = await api.request(url);
     
-    if (!docs || docs.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="8" class="text-center py-4"><div class="alert alert-info mb-0"><i class="bi bi-info-circle"></i> No hay documentos para mostrar. Crea uno nuevo con el botón <strong>Nuevo</strong></div></td></tr>';
-      return;
-    }
+    // Almacenar en cache para filtrado local
+    documentosCache = docs || [];
     
-    tbody.innerHTML = docs.map(d => {
-      const estadoClase = `estado-${d.estado.toLowerCase().replace(/_/g, '-')}`;
-      const linkWord = (d.ruta_word_generado && d.estado !== 'FINALIZADO')
-        ? `<a href="${API_BASE}${d.ruta_word_generado}" target="_blank" class="btn btn-sm btn-info"><i class="bi bi-file-word"></i></a>`
-        : '';
-      const linkPdf = d.ruta_pdf_final
-        ? `<a href="${API_BASE}${d.ruta_pdf_final}" target="_blank" class="btn btn-sm btn-danger"><i class="bi bi-file-pdf"></i></a>`
-        : (d.estado === 'FINALIZADO'
-          ? `<button class="btn btn-sm btn-outline-danger" disabled title="PDF en proceso"><i class="bi bi-file-pdf"></i></button>`
-          : '');
-      
-      return `
-        <tr>
-          <td><small>${d.id}</small></td>
-          <td><strong>${d.asunto}</strong></td>
-          <td><small>${d.tipo_nombre || ''}</small></td>
-          <td><small>${d.plantilla_nombre || ''}</small></td>
-          <td><small>${d.usuario_nombre || ''}</small></td>
-          <td><span class="badge estado-badge ${estadoClase}">${d.estado.replace(/_/g, ' ')}</span></td>
-          <td><code>${d.consecutivo || '-'}</code></td>
-          <td class="text-end">
-            <button class="btn btn-sm btn-outline-primary" data-ver-doc="${d.id}" title="Ver"><i class="bi bi-eye"></i></button>
-            ${linkWord} ${linkPdf}
-            <button class="btn btn-sm btn-outline-danger" data-eliminar-doc="${d.id}" title="Eliminar"><i class="bi bi-trash"></i></button>
-          </td>
-        </tr>
-      `;
-    }).join('');
-    
+    renderizarDocumentos(documentosCache);
     bindDocumentoActions();
   } catch (err) {
+    const tbody = document.querySelector('#tabla-documentos');
     tbody.innerHTML = `<tr><td colspan="8" class="text-center py-4"><div class="alert alert-danger mb-0"><i class="bi bi-exclamation-triangle"></i> Error al cargar documentos: ${err.message}</div></td></tr>`;
   }
+}
+
+// Renderizar documentos en la tabla
+function renderizarDocumentos(docs) {
+  const tbody = document.querySelector('#tabla-documentos');
+  
+  if (!docs || docs.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="8" class="text-center py-4"><div class="alert alert-info mb-0"><i class="bi bi-info-circle"></i> No hay documentos para mostrar. Crea uno nuevo con el botón <strong>Nuevo</strong></div></td></tr>';
+    return;
+  }
+  
+  tbody.innerHTML = docs.map(d => {
+    const estadoClase = `estado-${d.estado.toLowerCase().replace(/_/g, '-')}`;
+    const linkWord = (d.ruta_word_generado && d.estado !== 'FINALIZADO')
+      ? `<a href="${API_BASE}${d.ruta_word_generado}" target="_blank" class="btn btn-sm btn-info"><i class="bi bi-file-word"></i></a>`
+      : '';
+    const linkPdf = d.ruta_pdf_final
+      ? `<a href="${API_BASE}${d.ruta_pdf_final}" target="_blank" class="btn btn-sm btn-danger"><i class="bi bi-file-pdf"></i></a>`
+      : (d.estado === 'FINALIZADO'
+        ? `<button class="btn btn-sm btn-outline-danger" disabled title="PDF en proceso"><i class="bi bi-file-pdf"></i></button>`
+        : '');
+    
+    return `
+      <tr>
+        <td><small>${d.id}</small></td>
+        <td><strong>${d.asunto}</strong></td>
+        <td><small>${d.tipo_nombre || ''}</small></td>
+        <td><small>${d.plantilla_nombre || ''}</small></td>
+        <td><small>${d.usuario_nombre || ''}</small></td>
+        <td><span class="badge estado-badge ${estadoClase}">${d.estado.replace(/_/g, ' ')}</span></td>
+        <td><code>${d.consecutivo || '-'}</code></td>
+        <td class="text-end">
+          <button class="btn btn-sm btn-outline-primary" data-ver-doc="${d.id}" title="Ver"><i class="bi bi-eye"></i></button>
+          ${linkWord} ${linkPdf}
+          <button class="btn btn-sm btn-outline-danger" data-eliminar-doc="${d.id}" title="Eliminar"><i class="bi bi-trash"></i></button>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+// Filtrado local en tiempo real por asunto
+function filtrarDocumentosLocal() {
+  const asunto = document.getElementById('filtro-asunto').value.trim().toLowerCase();
+  
+  if (!asunto) {
+    renderizarDocumentos(documentosCache);
+  } else {
+    const filtrados = documentosCache.filter(d => 
+      d.asunto.toLowerCase().includes(asunto)
+    );
+    renderizarDocumentos(filtrados);
+  }
+  
+  bindDocumentoActions();
 }
 
 function bindDocumentoActions() {

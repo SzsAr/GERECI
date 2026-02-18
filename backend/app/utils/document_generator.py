@@ -361,3 +361,52 @@ def guardar_firma_usuario(usuario_id: int, imagen_bytes: bytes) -> str:
     except Exception as e:
         logger.error(f"Error al guardar firma: {e}")
         raise Exception(f"Error al guardar firma: {str(e)}")
+
+
+def eliminar_archivo_documento(documento_id: int, ruta_relativa: Optional[str] = None) -> bool:
+    """
+    Eliminar archivo .docx de un documento de la carpeta media/documentos.
+    Si no se proporciona ruta_relativa, intenta eliminar los archivos conocidos.
+    
+    Args:
+        documento_id: ID del documento
+        ruta_relativa: Ruta relativa del archivo (/static/documentos/...)
+        
+    Returns:
+        True si se eliminó, False si no encontró archivo
+    """
+    try:
+        rutas_a_intentar = []
+        
+        # Si se proporciona ruta, intentar eliminarla
+        if ruta_relativa:
+            # Convertir ruta web a ruta física
+            if ruta_relativa.startswith('/static/documentos/'):
+                filename = ruta_relativa.replace('/static/documentos/', '')
+                rutas_a_intentar.append(DOCUMENTOS_DIR / filename)
+            else:
+                rutas_a_intentar.append(Path(ruta_relativa))
+        
+        # También intentar patrones comunes
+        rutas_a_intentar.extend([
+            DOCUMENTOS_DIR / f"{documento_id}_borrador.docx",
+            DOCUMENTOS_DIR / f"{documento_id}_borrador_firmado.docx",
+            DOCUMENTOS_DIR / f"{documento_id}_final.docx",
+            DOCUMENTOS_DIR / f"doc_{documento_id}.docx",
+        ])
+        
+        eliminados = False
+        for filepath in rutas_a_intentar:
+            try:
+                if filepath.exists() and filepath.is_file():
+                    filepath.unlink()
+                    logger.info(f"Archivo eliminado: {filepath}")
+                    eliminados = True
+            except Exception as e:
+                logger.warning(f"No se pudo eliminar {filepath}: {e}")
+        
+        return eliminados
+    
+    except Exception as e:
+        logger.error(f"Error al eliminar archivo de documento {documento_id}: {e}")
+        return False

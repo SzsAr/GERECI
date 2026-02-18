@@ -23,6 +23,7 @@ from app.utils.document_generator import (
     generar_word_desde_plantilla,
     incrustar_firma,
     convertir_word_a_pdf,
+    eliminar_archivo_documento,
     DOCUMENTOS_DIR
 )
 from app.crud.plantillas import get_plantilla_by_id
@@ -266,6 +267,14 @@ def cambiar_estado_documento_endpoint(
                 descripcion=cambio_estado.descripcion_cambio.strip()
             )
             crud_observaciones.create_observacion(db, observacion)
+            
+            # Eliminar archivos .docx cuando se devuelve
+            try:
+                eliminar_archivo_documento(documento_id)
+                logger.info(f"Archivos .docx del documento {documento_id} eliminados al devolver")
+            except Exception as e:
+                logger.warning(f"No se pudieron eliminar archivos .docx del documento {documento_id} al devolver: {e}")
+
         
         # Registrar firma si es un estado de aprobación
         estados_con_firma = ['APROBADO_JURIDICA', 'APROBADO_GERENCIA', 'FINALIZADO']
@@ -348,6 +357,14 @@ def cambiar_estado_documento_endpoint(
                                     documento_id,
                                     DocumentoUpdate(ruta_pdf_final=ruta_pdf)
                                 )
+                                
+                                # Eliminar archivos .docx para liberar espacio
+                                try:
+                                    eliminar_archivo_documento(documento_id)
+                                    logger.info(f"Archivos .docx del documento {documento_id} eliminados")
+                                except Exception as e:
+                                    logger.warning(f"No se pudieron eliminar archivos .docx del documento {documento_id}: {e}")
+                                
                                 return {
                                     "message": "Documento finalizado y PDF generado correctamente",
                                     "nuevo_estado": "FINALIZADO",
@@ -401,7 +418,7 @@ def delete_documento(
     user_token: Annotated[UserOut, Depends(get_current_user)] = None
 ):
     """
-    Eliminar documento (solo BORRADORES).
+    Eliminar documento en estado BORRADOR o DEVUELTO (DEVUELTO_JURIDICA, DEVUELTO_GERENCIA).
     Requiere permiso de borrar en módulo Documentos.
     """
     try:
@@ -414,23 +431,36 @@ def delete_documento(
                 detail='Usuario no autorizado para eliminar documentos'
             )
         
-        # Verificar que el documento exista y esté en BORRADOR
+        # Verificar que el documento exista
         documento = crud_documentos.get_documento_by_id(db, documento_id)
         if not documento:
             raise HTTPException(status_code=404, detail="Documento no encontrado")
         
         estado = documento['estado'] if isinstance(documento, dict) else documento.estado
-        if estado != 'BORRADOR':
+        
+        # Permitir eliminar solo en estados BORRADOR o DEVUELTOS
+        estados_eliminables = ['BORRADOR', 'DEVUELTO_JURIDICA', 'DEVUELTO_GERENCIA']
+        if estado not in estados_eliminables:
             raise HTTPException(
                 status_code=400,
-                detail='Solo se pueden eliminar documentos en estado BORRADOR'
+                detail=f'Solo se pueden eliminar documentos en estado BORRADOR o DEVUELTO. Estado actual: {estado}'
             )
         
-        # Eliminar documento
+        # Obtener ruta del Word generado para eliminar después
+        ruta_word = documento.get('ruta_word_generado') if isinstance(documento, dict) else documento.ruta_word_generado
+        
+        # Eliminar documento de la base de datos
         from sqlalchemy import text
         query = text("DELETE FROM documentos WHERE id = :documento_id")
         db.execute(query, {"documento_id": documento_id})
         db.commit()
+        
+        # Eliminar archivos .docx asociados
+        try:
+            eliminar_archivo_documento(documento_id, ruta_word)
+            logger.info(f"Archivos .docx del documento {documento_id} eliminados")
+        except Exception as e:
+            logger.warning(f"No se pudieron eliminar archivos .docx del documento {documento_id}: {e}")
         
         return {"message": "Documento eliminado correctamente"}
     
