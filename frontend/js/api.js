@@ -30,18 +30,33 @@ const api = {
         const errJson = text ? JSON.parse(text) : {};
         const message = errJson.detail || errJson.message || text || 'Request failed';
         
-        // Si el usuario está inactivo, redirigir al login
+        // Si token expirado o inválido (401)
+        if (res.status === 401) {
+          localStorage.removeItem('token');
+          window.location.href = './index.html';
+          return;
+        }
+        
+        // Si el usuario está inactivo (403)
         if (res.status === 403 && message.includes('Usuario inactivo')) {
           localStorage.removeItem('token');
           window.location.href = './index.html';
+          return;
         }
         
         throw new Error(message);
       } catch (e) {
+        // Si es error de autenticación, redirigir al login
+        if (res.status === 401) {
+          localStorage.removeItem('token');
+          window.location.href = './index.html';
+          return;
+        }
         // Si no es JSON, usar texto crudo
         if (e instanceof Error && e.message.includes('Usuario inactivo')) {
           localStorage.removeItem('token');
           window.location.href = './index.html';
+          return;
         }
         throw new Error(text || 'Request failed');
       }

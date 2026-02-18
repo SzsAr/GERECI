@@ -14,6 +14,9 @@
 - ✅ Manejo robusto: No interrumpe flujos si falla eliminación de archivos
 - ✅ Logging: Registra intentos de eliminación (info si éxito, warning si falla)
 - ✅ Archivo TESTING_LIMPIEZA_DOCX.md con flujos testeables y checklist completo
+- ✅ Filtrado por asunto en tiempo real: Búsqueda clientside sin hacer requests
+- ✅ Removido botón "Filtrar" innecesario: Filtrados completamente automáticos
+- ✅ **SEGURIDAD:** Token expirado (401) redirige a login en lugar de mostrar error
 
 ## Pendientes / próximos pasos
 1) Probar flujo completo Usuarios: listar, crear (con cargo), editar, eliminar, toggle estado. Revisar consola/red por errores.
