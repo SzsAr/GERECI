@@ -26,6 +26,8 @@ from app.utils.document_generator import (
     DOCUMENTOS_DIR
 )
 from app.crud.plantillas import get_plantilla_by_id
+from app.utils.dynamic_data import actualizar_consecutivo_en_tabla_dinamica
+from app.utils.dynamic_tables import obtener_nombre_tabla_plantilla
 
 logger = logging.getLogger(__name__)
 
@@ -282,6 +284,15 @@ def cambiar_estado_documento_endpoint(
                     status_code=500,
                     detail="El trigger no asignó consecutivo correctamente"
                 )
+            
+            # Actualizar consecutivo en la tabla dinámica del documento
+            try:
+                id_plantilla = documento_actualizado.get('id_plantilla') if isinstance(documento_actualizado, dict) else documento_actualizado.id_plantilla
+                nombre_tabla = obtener_nombre_tabla_plantilla(db, id_plantilla)
+                if nombre_tabla:
+                    actualizar_consecutivo_en_tabla_dinamica(db, documento_id, nombre_tabla, consecutivo)
+            except Exception as e:
+                logger.warning(f"No se pudo actualizar consecutivo en tabla dinámica: {e}")
             
             # Generar PDF final con consecutivo y fecha
             try:

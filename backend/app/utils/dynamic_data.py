@@ -120,3 +120,43 @@ def obtener_datos_documento_de_plantilla(db: Session, id_documento: int,
     except Exception as e:
         logger.error(f"Error al obtener datos de tabla dinámica: {e}")
         return {}
+
+
+def actualizar_consecutivo_en_tabla_dinamica(db: Session, id_documento: int, 
+                                            nombre_tabla: str, consecutivo: str) -> bool:
+    """
+    Actualizar el consecutivo en la tabla dinámica del documento.
+    
+    Args:
+        db: Sesión de BD
+        id_documento: ID del documento
+        nombre_tabla: Nombre de la tabla dinámica
+        consecutivo: Consecutivo asignado
+        
+    Returns:
+        True si se actualizó correctamente
+    """
+    try:
+        if not nombre_tabla:
+            logger.warning(f"No se encontró tabla dinámica para actualizar consecutivo del documento {id_documento}")
+            return False
+        
+        update_sql = f"""
+        UPDATE `{nombre_tabla}`
+        SET consecutivo = :consecutivo
+        WHERE id_documento = :id_documento
+        """
+        
+        db.execute(text(update_sql), {
+            "consecutivo": consecutivo,
+            "id_documento": id_documento
+        })
+        db.commit()
+        
+        logger.info(f"Consecutivo '{consecutivo}' actualizado en tabla '{nombre_tabla}' para documento {id_documento}")
+        return True
+        
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error al actualizar consecutivo en tabla dinámica: {e}")
+        return False
