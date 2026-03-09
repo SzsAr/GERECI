@@ -26,10 +26,10 @@ def create_plantilla(db: Session, id_tipo: int, nombre: str, campos_json: dict,
     
     Los campos de firma NO se incluyen en campos_json (no aparecen en modal).
     Se crean automáticamente como columnas en la tabla dinámica según el tipo:
-    - RESOLUCIÓN: firma_gerente, nombre_gerente, cargo_gerente, firma_elabora,
-      nombre_elabora, cargo_elabora, firma_revisa, nombre_revisa, cargo_revisa
-    - CIRCULAR: firma_gerente, nombre_gerente, cargo_gerente, firma_elabora,
-      nombre_elabora, cargo_elabora
+    - RESOLUCIÓN: gerente_firma, gerente_nombre, gerente_cargo, unidad_firma,
+      unidad_nombre, unidad_cargo, juridica_firma, juridica_nombre, juridica_cargo
+    - CIRCULAR: gerente_firma, gerente_nombre, gerente_cargo, unidad_firma,
+      unidad_nombre, unidad_cargo
     
     Args:
         db: Sesión de BD
@@ -179,9 +179,9 @@ def obtener_campos_ordenados_desde_tabla(db: Session, nombre_tabla: str) -> Opti
         # Columnas que no son campos dinámicos (incluye campos de firma automáticos)
         columnas_excluidas = {'id', 'id_plantilla', 'id_documento', 'campos_json', 
                              'fecha', 'consecutivo', 'fecha_creacion',
-                             'firma_gerente', 'nombre_gerente', 'cargo_gerente',
-                             'firma_elabora', 'nombre_elabora', 'cargo_elabora',
-                             'firma_revisa', 'nombre_revisa', 'cargo_revisa'}
+                             'gerente_firma', 'gerente_nombre', 'gerente_cargo',
+                             'unidad_firma', 'unidad_nombre', 'unidad_cargo',
+                             'juridica_firma', 'juridica_nombre', 'juridica_cargo'}
         
         query = text("""
             SELECT COLUMN_NAME, DATA_TYPE
@@ -190,9 +190,9 @@ def obtener_campos_ordenados_desde_tabla(db: Session, nombre_tabla: str) -> Opti
               AND TABLE_NAME = :tabla
               AND COLUMN_NAME NOT IN ('id', 'id_plantilla', 'id_documento', 
                                       'campos_json', 'fecha', 'consecutivo', 'fecha_creacion',
-                                      'firma_gerente', 'nombre_gerente', 'cargo_gerente',
-                                      'firma_elabora', 'nombre_elabora', 'cargo_elabora',
-                                      'firma_revisa', 'nombre_revisa', 'cargo_revisa')
+                                      'gerente_firma', 'gerente_nombre', 'gerente_cargo',
+                                      'unidad_firma', 'unidad_nombre', 'unidad_cargo',
+                                      'juridica_firma', 'juridica_nombre', 'juridica_cargo')
             ORDER BY ORDINAL_POSITION
         """)
         

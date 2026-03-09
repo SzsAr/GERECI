@@ -48,6 +48,8 @@ def generar_word_desde_plantilla(
         if not valores_campos:
             valores_campos = {}
         
+        logger.info(f"Generando documento {documento_id} con context: {valores_campos}")
+        
         # Cargar plantilla con docxtpl
         doc_template = DocxTemplate(plantilla_path)
         
@@ -108,12 +110,24 @@ def _reemplazar_en_runs(paragraph: Any, valores: Dict[str, Any]) -> None:
         return
 
     combined = "".join([r.text or "" for r in runs])
+    
+    # Log para debugging
+    if "unidad_nombre" in str(valores) or "gerente" in combined.lower():
+        logger.info(f"DEBUG _reemplazar_en_runs: combined='{combined}'")
+        logger.info(f"DEBUG _reemplazar_en_runs: claves en valores={list(valores.keys())}")
+    
+    replacements_made = {}
     for key, value in valores.items():
         placeholder = f"{{{{{key}}}}}"
         replacement = "" if value is None else str(value)
         if placeholder in combined:
+            logger.info(f"DEBUG: Reemplazando '{placeholder}' con '{replacement}'")
             combined = combined.replace(placeholder, replacement)
+            replacements_made[key] = True
 
+    if replacements_made:
+        logger.info(f"DEBUG: Reemplazos realizados en párrafo: {replacements_made}")
+    
     runs[0].text = combined
     for r in runs[1:]:
         r.text = ""

@@ -80,14 +80,16 @@ def get_firma_by_id(db: Session, firma_id: int):
 def get_firmas_by_documento(db: Session, documento_id: int):
     """
     Obtener todas las firmas digitales de un documento con información completa.
-    Incluye nombre del usuario y cargo.
+    Incluye nombre del usuario, cargo, rol e imagen de firma.
     """
     try:
         query = text("""
             SELECT 
                 f.id, f.id_usuario, f.id_documento, f.fecha_firma,
                 u.nombre as nombre_usuario,
-                COALESCE(c.nombre, 'Sin cargo asignado') as cargo
+                u.id_rol as id_rol,
+                COALESCE(c.nombre, 'Sin cargo asignado') as cargo,
+                u.firma as firma_imagen
             FROM firmas_digitales f
             INNER JOIN usuarios u ON f.id_usuario = u.id
             LEFT JOIN cargos c ON u.id_cargo = c.id

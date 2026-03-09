@@ -490,18 +490,18 @@ def generar_context_para_plantilla(db: Session, documento_id: int, usuario_id: O
         context['plantilla_nombre'] = doc.get('plantilla_nombre', '')
         
         # Inicializar placeholders de firma vacíos (se llenarán al finalizar)
-        context['nombre_elabora'] = ''
-        context['cargo_elabora'] = ''
-        context['firma_elabora'] = ''
-        context['nombre_gerente'] = ''
-        context['cargo_gerente'] = ''
-        context['firma_gerente'] = ''
+        context['unidad_nombre'] = ''
+        context['unidad_cargo'] = ''
+        context['unidad_firma'] = ''
+        context['gerente_nombre'] = ''
+        context['gerente_cargo'] = ''
+        context['gerente_firma'] = ''
         
         tipo_documento = doc.get('tipo_nombre', '').upper()
         if 'RESOLUCION' in tipo_documento:
-            context['nombre_revisa'] = ''
-            context['cargo_revisa'] = ''
-            context['firma_revisa'] = ''
+            context['juridica_nombre'] = ''
+            context['juridica_cargo'] = ''
+            context['juridica_firma'] = ''
         
         return context
     
@@ -514,14 +514,20 @@ def generar_context_con_firmas(db: Session, documento_id: int) -> dict:
     """
     Generar el context completo incluyendo firmas de aprobadores.
     Usado cuando el documento está FINALIZADO.
-    Inyecta: firmas_nombres, firmas_cargos, firma_1_nombre, firma_1_cargo, etc.
+    
+    Mapea los datos de firmas a los nombres utilizados en la plantilla y BD:
+    - Rol Unidad → unidad_nombre, unidad_cargo, unidad_firma
+    - Rol Jurídica → juridica_nombre, juridica_cargo, juridica_firma
+    - Rol Gerencia → gerente_nombre, gerente_cargo, gerente_firma
+    
+    Mapeo de roles: 1=Unidad, 2=Gerencia, 3=Jurídica, 4=Otra
     
     Args:
         db: Sesión de BD
         documento_id: ID del documento
     
     Returns:
-        Dict con valores_campos + metadatos + datos de firmas
+        Dict con valores_campos + metadatos + datos de firmas de los aprobadores
     """
     try:
         from app.crud.firmas_digitales import get_firmas_by_documento
@@ -560,53 +566,64 @@ def generar_context_con_firmas(db: Session, documento_id: int) -> dict:
         context['tipo_documento'] = doc.get('tipo_nombre', '')
         context['plantilla_nombre'] = doc.get('plantilla_nombre', '')
         
-        # Agregar firmas (nombres y cargos de aprobadores)
-        firmas = get_firmas_by_documento(db, documento_id)
-        if firmas:
-            # Crear arrays para nombres y cargos
-            firmas_nombres = []
-            firmas_cargos = []
-            
-            for i, firma in enumerate(firmas):
-                firmas_nombres.append(firma.get('nombre_usuario', ''))
-                firmas_cargos.append(firma.get('cargo', ''))
-                
-                # También guardar individual por índice (por si la plantilla los necesita por separado)
-                context[f'firma_{i+1}_nombre'] = firma.get('nombre_usuario', '')
-                context[f'firma_{i+1}_cargo'] = firma.get('cargo', '')
-            
-            context['firmas_nombres'] = firmas_nombres
-            context['firmas_cargos'] = firmas_cargos
-            
-            # Mapear firmas a roles específicos según orden cronológico
-            # Primera firma = quien elabora
-            if len(firmas) >= 1:
-                context['nombre_elabora'] = firmas[0].get('nombre_usuario', '')
-                context['cargo_elabora'] = firmas[0].get('cargo', '')
-                context['firma_elabora'] = ''  # Ruta de imagen (vacío por ahora)
-            
-            # Para RESOLUCIÓN: segunda firma = quien revisa, última = gerente
-            # Para CIRCULAR: segunda firma (o última si solo hay 2) = gerente
-            tipo_documento = doc.get('tipo_nombre', '').upper()
-            
-            if 'RESOLUCION' in tipo_documento:
-                # Segunda firma = quien revisa (jurídica)
-                if len(firmas) >= 2:
-                    context['nombre_revisa'] = firmas[1].get('nombre_usuario', '')
-                    context['cargo_revisa'] = firmas[1].get('cargo', '')
-                    context['firma_revisa'] = ''
-                # Última firma = gerente
-                if len(firmas) >= 3:
-                    context['nombre_gerente'] = firmas[-1].get('nombre_usuario', '')
-                    context['cargo_gerente'] = firmas[-1].get('cargo', '')
-                    context['firma_gerente'] = ''
-            else:
-                # Para CIRCULAR: última firma = gerente
-                if len(firmas) >= 2:
-                    context['nombre_gerente'] = firmas[-1].get('nombre_usuario', '')
-                    context['cargo_gerente'] = firmas[-1].get('cargo', '')
-                    context['firma_gerente'] = ''
+        # Obtener tipo de documento para determinar el flujo
+        tipo_documento = doc.get('tipo_nombre', '').upper()
+        requiere_juridica = 'RESOLUCION' in tipo_documento or 'RESOLUCIÓN' in tipo_documento
         
+        # Agregar firmas (nombres, cargos e imágenes de aprobadores)
+        # Retorna lista con id_rol para mapear por rol, no por orden
+        firmas = get_firmas_by_documento(db, documento_id)
+        
+        # Inicializar campos vacíos por defecto
+        # Nombres consistentes: {{gerente_*}}, {{unidad_*}}, {{juridica_*}}
+        context['unidad_nombre'] = ''
+        context['unidad_cargo'] = ''
+        context['unidad_firma'] = ''
+        context['juridica_nombre'] = ''
+        context['juridica_cargo'] = ''
+        context['juridica_firma'] = ''
+        context['gerente_nombre'] = ''
+        context['gerente_cargo'] = ''
+        context['gerente_firma'] = ''
+        
+        if firmas and len(firmas) > 0:
+            # Mapear firmas por rol en lugar de por orden cronológico
+            # Roles esperados: 1=Unidad, 2=Gerencia, 3=Jurídica, 4=Otra
+            
+            usuario_por_rol = {}
+            for firma in firmas:
+                rol = firma.get('id_rol')
+                usuario_por_rol[rol] = firma
+            
+            # Asignar según roles:
+            # Rol 1 o 4 = Unidad (quien elabora)
+            # Rol 3 = Jurídica (quien revisa)
+            # Rol 2 = Gerencia (quien aprueba finalmente)
+            
+            if 1 in usuario_por_rol:  # Unidad
+                firma_unidad = usuario_por_rol[1]
+                context['unidad_nombre'] = firma_unidad.get('nombre_usuario', '')
+                context['unidad_cargo'] = firma_unidad.get('cargo', '')
+                context['unidad_firma'] = firma_unidad.get('firma_imagen', '') or ''
+            elif 4 in usuario_por_rol:  # Otra (podría ser Subgerencia o similar)
+                firma_unidad = usuario_por_rol[4]
+                context['unidad_nombre'] = firma_unidad.get('nombre_usuario', '')
+                context['unidad_cargo'] = firma_unidad.get('cargo', '')
+                context['unidad_firma'] = firma_unidad.get('firma_imagen', '') or ''
+            
+            if requiere_juridica and 3 in usuario_por_rol:  # Jurídica (solo si es Resolución)
+                firma_juridica = usuario_por_rol[3]
+                context['juridica_nombre'] = firma_juridica.get('nombre_usuario', '')
+                context['juridica_cargo'] = firma_juridica.get('cargo', '')
+                context['juridica_firma'] = firma_juridica.get('firma_imagen', '') or ''
+            
+            if 2 in usuario_por_rol:  # Gerencia
+                firma_gerente = usuario_por_rol[2]
+                context['gerente_nombre'] = firma_gerente.get('nombre_usuario', '')
+                context['gerente_cargo'] = firma_gerente.get('cargo', '')
+                context['gerente_firma'] = firma_gerente.get('firma_imagen', '') or ''
+        
+        logger.info(f"Context de firmas generado para doc {documento_id}: {context}")
         return context
     
     except Exception as e:

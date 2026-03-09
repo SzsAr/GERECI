@@ -27,7 +27,7 @@ from app.utils.document_generator import (
     DOCUMENTOS_DIR
 )
 from app.crud.plantillas import get_plantilla_by_id
-from app.utils.dynamic_data import actualizar_consecutivo_en_tabla_dinamica
+from app.utils.dynamic_data import actualizar_consecutivo_en_tabla_dinamica, actualizar_firmas_en_tabla_dinamica
 from app.utils.dynamic_tables import obtener_nombre_tabla_plantilla
 
 logger = logging.getLogger(__name__)
@@ -277,15 +277,113 @@ def cambiar_estado_documento_endpoint(
 
         
         # Registrar firma si es un estado de aprobación
-        estados_con_firma = ['APROBADO_JURIDICA', 'APROBADO_GERENCIA', 'FINALIZADO']
+        # Las firmas se registran ANTES de llegar a FIRMADO para que estén disponibles
+        estados_con_firma = ['APROBADO_JURIDICA', 'APROBADO_GERENCIA']
         if cambio_estado.nuevo_estado in estados_con_firma:
             registrar_firma_aprobacion(db, documento_id, user_token.id_usuario)
+            logger.info(f"Firma registrada para usuario {user_token.id_usuario} en estado {cambio_estado.nuevo_estado}")
         
-        # Si es FINALIZADO, generar PDF final automáticamente
+        # Si es FIRMADO (APROBADO_GERENCIA → FIRMADO), regenerar Word con todas las firmas
+        if cambio_estado.nuevo_estado == 'FIRMADO':
+            # Asegurar que el usuario creador (quien elaboró) esté registrado como firma
+            usuario_genera = documento.get('usuario_genera') if isinstance(documento, dict) else documento.usuario_genera
+            if usuario_genera:
+                registrar_firma_aprobacion(db, documento_id, usuario_genera)
+                logger.info(f"Firma del creador (usuario {usuario_genera}) registrada al pasar a FIRMADO")
+            
+            # IMPORTANTE: Hacer commit para que las firmas estén disponibles al generar el context
+            db.commit()
+            
+            # DEBUG: Verificar cuántas firmas hay registradas antes de generar el context
+            from app.crud.firmas_digitales import get_firmas_by_documento
+            firmas_debug = get_firmas_by_documento(db, documento_id)
+            logger.info(f"DEBUG FIRMADO: Documento {documento_id} tiene {len(firmas_debug) if firmas_debug else 0} firmas registradas")
+            if firmas_debug:
+                for firma in firmas_debug:
+                    logger.info(f"  - Usuario: {firma.get('nombre_usuario')}, Rol: {firma.get('id_rol')}, Cargo: {firma.get('cargo')}")
+            
+            try:
+                # Obtener plantilla
+                id_plantilla = documento.get('id_plantilla') if isinstance(documento, dict) else documento.id_plantilla
+                plantilla = get_plantilla_by_id(db, id_plantilla)
+                
+                if plantilla:
+                    nombre_archivo = plantilla.get('nombre_archivo')
+                    ruta_almacenamiento = plantilla.get('ruta_almacenamiento')
+                    
+                    if nombre_archivo or ruta_almacenamiento:
+                        # Construir ruta
+                        if ruta_almacenamiento:
+                            plantilla_path = Path(ruta_almacenamiento)
+                        else:
+                            plantilla_path = Path(__file__).parent.parent.parent / "media" / "plantillas" / nombre_archivo
+                        
+                        if plantilla_path.exists():
+                            # Generar context completo CON todas las firmas de aprobadores
+                            context = crud_documentos.generar_context_con_firmas(db, documento_id)
+                            logger.info(f"Context generado para documento {documento_id} en estado FIRMADO")
+                            logger.info(f"DEBUG: Campos de firmas en context:")
+                            logger.info(f"  - gerente_nombre: '{context.get('gerente_nombre')}'")
+                            logger.info(f"  - gerente_cargo: '{context.get('gerente_cargo')}'")
+                            logger.info(f"  - unidad_nombre: '{context.get('unidad_nombre')}'")
+                            logger.info(f"  - unidad_cargo: '{context.get('unidad_cargo')}'")
+                            logger.info(f"  - juridica_nombre: '{context.get('juridica_nombre')}'")
+                            logger.info(f"  - juridica_cargo: '{context.get('juridica_cargo')}'")
+                            
+                            # Generar Word con firmas
+                            ruta_word_firmado = generar_word_desde_plantilla(
+                                str(plantilla_path),
+                                documento_id,
+                                context,
+                                output_filename=f"{documento_id}_firmado.docx"
+                            )
+
+                            # Actualizar ruta del Word firmado
+                            crud_documentos.update_documento(
+                                db,
+                                documento_id,
+                                DocumentoUpdate(ruta_word_generado=ruta_word_firmado)
+                            )
+                            
+                            # ⭐ ACTUALIZAR TABLA DINÁMICA CON FIRMAS (igual como funciona en FINALIZADO)
+                            try:
+                                nombre_tabla = obtener_nombre_tabla_plantilla(db, id_plantilla)
+                                if nombre_tabla:
+                                    # Actualizar firmas en tabla dinámica
+                                    actualizar_firmas_en_tabla_dinamica(db, documento_id, nombre_tabla, context)
+                                    logger.info(f"Firmas actualizadas en tabla dinámica para documento {documento_id} en estado FIRMADO")
+                                else:
+                                    logger.warning(f"No se encontró tabla dinámica para plantilla {id_plantilla}")
+                            except Exception as e:
+                                logger.error(f"Error al actualizar firmas en tabla dinámica en FIRMADO: {e}", exc_info=True)
+                            
+                            logger.info(f"Word generado con firmas para documento {documento_id}: {ruta_word_firmado}")
+                            
+                            return {
+                                "message": "Documento firmado y Word generado con todas las firmas",
+                                "nuevo_estado": "FIRMADO",
+                                "ruta_word": ruta_word_firmado,
+                                "info": "Puede visualizar el documento Word con las firmas antes de finalizar"
+                            }
+            except Exception as e:
+                logger.error(f"Error al generar Word con firmas: {e}")
+                # Continuar aunque falle la generación
+                return {
+                    "message": f"Documento marcado como FIRMADO pero hubo error al generar Word: {str(e)}",
+                    "nuevo_estado": "FIRMADO",
+                    "error": str(e)
+                }
+        
+        # Si es FINALIZADO, asignar consecutivo y generar PDF final
         if cambio_estado.nuevo_estado == 'FINALIZADO':
             # Refrescar documento para obtener consecutivo asignado por trigger
             db.commit()  # Asegurar que el trigger se ejecutó
             documento_actualizado = crud_documentos.get_documento_by_id(db, documento_id)
+            
+            # Asegurar que el usuario creador (quien elaboró) esté registrado como firma
+            usuario_genera = documento_actualizado.get('usuario_genera') if isinstance(documento_actualizado, dict) else documento_actualizado.usuario_genera
+            if usuario_genera:
+                registrar_firma_aprobacion(db, documento_id, usuario_genera)
             consecutivo = documento_actualizado.get('consecutivo') if isinstance(documento_actualizado, dict) else documento_actualizado.consecutivo
             
             if not consecutivo:
@@ -294,14 +392,22 @@ def cambiar_estado_documento_endpoint(
                     detail="El trigger no asignó consecutivo correctamente"
                 )
             
-            # Actualizar consecutivo en la tabla dinámica del documento
+            # Actualizar consecutivo y firmas en la tabla dinámica del documento
             try:
                 id_plantilla = documento_actualizado.get('id_plantilla') if isinstance(documento_actualizado, dict) else documento_actualizado.id_plantilla
                 nombre_tabla = obtener_nombre_tabla_plantilla(db, id_plantilla)
                 if nombre_tabla:
                     actualizar_consecutivo_en_tabla_dinamica(db, documento_id, nombre_tabla, consecutivo)
+                    
+                    # Generar context con firmas para actualizar en tabla dinámica
+                    try:
+                        context = crud_documentos.generar_context_con_firmas(db, documento_id)
+                        actualizar_firmas_en_tabla_dinamica(db, documento_id, nombre_tabla, context)
+                        logger.info(f"Firmas actualizadas en tabla dinámica para documento {documento_id}")
+                    except Exception as e:
+                        logger.warning(f"No se pudieron actualizar firmas en tabla dinámica: {e}")
             except Exception as e:
-                logger.warning(f"No se pudo actualizar consecutivo en tabla dinámica: {e}")
+                logger.warning(f"No se pudo actualizar consecutivo/firmas en tabla dinámica: {e}")
             
             # Generar PDF final con consecutivo y fecha
             try:
@@ -321,27 +427,32 @@ def cambiar_estado_documento_endpoint(
                             plantilla_path = Path(__file__).parent.parent.parent / "media" / "plantillas" / nombre_archivo
                         
                         if plantilla_path.exists():
-                            # Generar context completo CON firmas de aprobadores
+                            # Obtener el Word firmado actual (ya tiene las firmas inyectadas)
+                            ruta_word_firmado = documento_actualizado.get('ruta_word_generado') if isinstance(documento_actualizado, dict) else documento_actualizado.ruta_word_generado
+                            
+                            # SIEMPRE regenerar con context completo (firmas + consecutivo)
+                            # para asegurar que el PDF final incluya todas las firmas
+                            logger.info(f"Regenerando Word para documento {documento_id} con firmas y consecutivo")
                             context = crud_documentos.generar_context_con_firmas(db, documento_id)
                             context['consecutivo'] = consecutivo
                             
-                            # Generar Word final
                             ruta_word_final = generar_word_desde_plantilla(
                                 str(plantilla_path),
                                 documento_id,
                                 context,
                                 output_filename=f"{documento_id}_final.docx"
                             )
-
-                            # Guardar el Word final aunque falle la conversion
+                            
                             crud_documentos.update_documento(
                                 db,
                                 documento_id,
                                 DocumentoUpdate(ruta_word_generado=ruta_word_final)
                             )
                             
+                            ruta_word_firmado = ruta_word_final
+                            
                             # Convertir a PDF con nombre personalizado
-                            word_filename = ruta_word_final.replace('/static/documentos/', '')
+                            word_filename = ruta_word_firmado.replace('/static/documentos/', '')
                             word_full_path = DOCUMENTOS_DIR / word_filename
                             tipo_documento = documento_actualizado.get('tipo_nombre') if isinstance(documento_actualizado, dict) else documento_actualizado.tipo_nombre
                             ruta_pdf = convertir_word_a_pdf(
@@ -369,7 +480,7 @@ def cambiar_estado_documento_endpoint(
                                     "message": "Documento finalizado y PDF generado correctamente",
                                     "nuevo_estado": "FINALIZADO",
                                     "consecutivo": consecutivo,
-                                    "ruta_word": ruta_word_final,
+                                    "ruta_word": ruta_word_firmado,
                                     "ruta_pdf": ruta_pdf
                                 }
 
@@ -377,7 +488,7 @@ def cambiar_estado_documento_endpoint(
                                 "message": "Documento finalizado y Word generado. PDF pendiente",
                                 "nuevo_estado": "FINALIZADO",
                                 "consecutivo": consecutivo,
-                                "ruta_word": ruta_word_final,
+                                "ruta_word": ruta_word_firmado,
                                 "ruta_pdf": None
                             }
             except Exception as e:
@@ -536,14 +647,24 @@ def generar_word_documento(
                 detail=f"Archivo de plantilla no encontrado: {plantilla_path}"
             )
         
-        # Generar context con todos los valores
-        context = crud_documentos.generar_context_para_plantilla(db, documento_id, user_token.id_usuario)
-        
+        estado_documento = documento.get('estado') if isinstance(documento, dict) else documento.estado
+
+        # Si el documento ya está firmado/finalizado, usar contexto con firmas
+        # para no sobrescribir el Word con placeholders de firma vacíos.
+        if estado_documento in ['FIRMADO', 'PENDIENTE_FINALIZACION', 'FINALIZADO']:
+            context = crud_documentos.generar_context_con_firmas(db, documento_id)
+            output_filename = f"{documento_id}_firmado.docx" if estado_documento == 'FIRMADO' else f"{documento_id}_final.docx"
+            logger.info(f"Generando Word para doc {documento_id} en estado {estado_documento} usando contexto con firmas")
+        else:
+            context = crud_documentos.generar_context_para_plantilla(db, documento_id, user_token.id_usuario)
+            output_filename = None
+
         # Generar documento Word
         ruta_word = generar_word_desde_plantilla(
             str(plantilla_path),
             documento_id,
-            context
+            context,
+            output_filename=output_filename
         )
         
         # Actualizar documento con la ruta del Word generado
@@ -640,14 +761,16 @@ def generar_pdf_documento(
                 detail=f"Archivo de plantilla no encontrado: {plantilla_path}"
             )
         
-        # Generar context COMPLETO (con consecutivo y fecha de emisión)
-        context = crud_documentos.generar_context_para_plantilla(db, documento_id, user_token.id_usuario)
+        # Generar contexto con firmas para evitar perder nombres/cargos en el Word final.
+        context = crud_documentos.generar_context_con_firmas(db, documento_id)
+        context['consecutivo'] = consecutivo
         
         # Generar documento Word FINAL
         ruta_word_final = generar_word_desde_plantilla(
             str(plantilla_path),
             documento_id,
-            context
+            context,
+            output_filename=f"{documento_id}_final.docx"
         )
         
         # Convertir Word a PDF con nombre personalizado

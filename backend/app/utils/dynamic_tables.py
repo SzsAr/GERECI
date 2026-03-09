@@ -25,9 +25,9 @@ TIPOS_DATOS_PERMITIDOS = {
 RESERVED_COLUMNS = {
     'id', 'id_plantilla', 'id_documento', 'campos_json',
     'fecha', 'consecutivo', 'fecha_creacion',
-    'firma_gerente', 'nombre_gerente', 'cargo_gerente',
-    'firma_elabora', 'nombre_elabora', 'cargo_elabora',
-    'firma_revisa', 'nombre_revisa', 'cargo_revisa'
+    'gerente_firma', 'gerente_nombre', 'gerente_cargo',
+    'unidad_firma', 'unidad_nombre', 'unidad_cargo',
+    'juridica_firma', 'juridica_nombre', 'juridica_cargo'
 }
 
 def sanitizar_nombre_tabla(nombre: str) -> str:
@@ -59,10 +59,10 @@ def crear_tabla_dinamica_plantilla(db: Session, id_plantilla: int, nombre_planti
     }
     
     Automáticamente agrega columnas de firma según el tipo de documento:
-    - RESOLUCIÓN: firma_gerente, nombre_gerente, cargo_gerente, firma_elabora,
-      nombre_elabora, cargo_elabora, firma_revisa, nombre_revisa, cargo_revisa
-    - CIRCULAR: firma_gerente, nombre_gerente, cargo_gerente, firma_elabora,
-      nombre_elabora, cargo_elabora
+    - RESOLUCIÓN: gerente_firma, gerente_nombre, gerente_cargo, unidad_firma,
+      unidad_nombre, unidad_cargo, juridica_firma, juridica_nombre, juridica_cargo
+    - CIRCULAR: gerente_firma, gerente_nombre, gerente_cargo, unidad_firma,
+      unidad_nombre, unidad_cargo
     
     La tabla tendrá columnas:
     - id_plantilla (FK)
@@ -96,21 +96,21 @@ def crear_tabla_dinamica_plantilla(db: Session, id_plantilla: int, nombre_planti
         # Agregar columnas de firma según el tipo de documento
         tipo_upper = tipo_documento.upper()
         
-        # Para todos los tipos con firmas: agregar elabora y gerente
+        # Para todos los tipos con firmas: agregar unidad y gerente
         if any(tipo in tipo_upper for tipo in ['RESOLUCION', 'CIRCULAR']):
-            columnas.append("`firma_elabora` TEXT NULL COMMENT 'Ruta de firma de quien elabora'")
-            columnas.append("`nombre_elabora` VARCHAR(255) NULL COMMENT 'Nombre de quien elabora'")
-            columnas.append("`cargo_elabora` VARCHAR(255) NULL COMMENT 'Cargo de quien elabora'")
+            columnas.append("`unidad_firma` TEXT NULL COMMENT 'Ruta de firma de quien elabora'")
+            columnas.append("`unidad_nombre` VARCHAR(255) NULL COMMENT 'Nombre de quien elabora'")
+            columnas.append("`unidad_cargo` VARCHAR(255) NULL COMMENT 'Cargo de quien elabora'")
             
-            columnas.append("`firma_gerente` TEXT NULL COMMENT 'Ruta de firma del gerente'")
-            columnas.append("`nombre_gerente` VARCHAR(255) NULL COMMENT 'Nombre del gerente'")
-            columnas.append("`cargo_gerente` VARCHAR(255) NULL COMMENT 'Cargo del gerente'")
+            columnas.append("`gerente_firma` TEXT NULL COMMENT 'Ruta de firma del gerente'")
+            columnas.append("`gerente_nombre` VARCHAR(255) NULL COMMENT 'Nombre del gerente'")
+            columnas.append("`gerente_cargo` VARCHAR(255) NULL COMMENT 'Cargo del gerente'")
         
         # Solo para RESOLUCIÓN: agregar quien revisa
         if 'RESOLUCION' in tipo_upper:
-            columnas.append("`firma_revisa` TEXT NULL COMMENT 'Ruta de firma de quien revisa'")
-            columnas.append("`nombre_revisa` VARCHAR(255) NULL COMMENT 'Nombre de quien revisa'")
-            columnas.append("`cargo_revisa` VARCHAR(255) NULL COMMENT 'Cargo de quien revisa'")
+            columnas.append("`juridica_firma` TEXT NULL COMMENT 'Ruta de firma de quien revisa'")
+            columnas.append("`juridica_nombre` VARCHAR(255) NULL COMMENT 'Nombre de quien revisa'")
+            columnas.append("`juridica_cargo` VARCHAR(255) NULL COMMENT 'Cargo de quien revisa'")
         
         # Agregar columnas por defecto para control del documento
         columnas.append("`fecha` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'Fecha del documento (automática)'")
