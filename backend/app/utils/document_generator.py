@@ -6,9 +6,9 @@ import subprocess
 import logging
 from pathlib import Path
 from typing import Optional, Dict, Any
-from docxtpl import DocxTemplate
+from docxtpl import DocxTemplate, InlineImage
 from docx import Document
-from docx.shared import Pt, RGBColor, Inches
+from docx.shared import Pt, RGBColor, Inches, Mm
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from PIL import Image
 from io import BytesIO
@@ -52,6 +52,35 @@ def generar_word_desde_plantilla(
         
         # Cargar plantilla con docxtpl
         doc_template = DocxTemplate(plantilla_path)
+        
+        # Convertir campos de firma de string → InlineImage
+        campos_firma = ['gerente_firma', 'unidad_firma', 'juridica_firma']
+        for campo in campos_firma:
+            if campo in valores_campos and valores_campos[campo]:
+                ruta_firma = valores_campos[campo]
+                
+                # Convertir /static/firmas/xxx → media/firmas/xxx
+                if isinstance(ruta_firma, str) and ruta_firma.startswith('/static/'):
+                    ruta_firma = ruta_firma.replace('/static/', '')
+                
+                # Construir ruta completa
+                ruta_completa = MEDIA_DIR / ruta_firma.lstrip('/')
+                
+                # Si existe el archivo, crear InlineImage
+                if ruta_completa.exists():
+                    try:
+                        valores_campos[campo] = InlineImage(
+                            doc_template, 
+                            str(ruta_completa), 
+                            width=Mm(30)
+                        )
+                        logger.info(f"Firma {campo} convertida a imagen: {ruta_completa}")
+                    except Exception as e:
+                        logger.warning(f"Error al cargar firma {campo}: {e}")
+                        valores_campos[campo] = ''
+                else:
+                    logger.warning(f"Archivo de firma no encontrado: {ruta_completa}")
+                    valores_campos[campo] = ''
         
         # Renderizar con los valores
         doc_template.render(valores_campos)

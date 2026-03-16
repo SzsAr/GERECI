@@ -211,6 +211,19 @@
               </select>
             </div>
             <div class="mb-3">
+              <label class="form-label">Firma (Imagen de firma)</label>
+              <div id="firma-preview-container" class="mb-2 d-none">
+                <small class="text-muted d-block mb-2">Firma actual:</small>
+                <img id="firma-preview" src="" alt="Firma" style="max-width: 150px; max-height: 100px; border: 1px solid #ddd; padding: 4px;">
+              </div>
+              <input type="file" class="form-control" id="usuario-firma" accept="image/png,image/jpeg,image/webp">
+              <small class="text-muted d-block mt-2">Formatos: PNG, JPEG, WebP • Máximo: 100 KB</small>
+              <div id="firma-preview-new" class="mt-2 d-none">
+                <small class="text-muted d-block mb-2">Nueva firma:</small>
+                <img id="firma-preview-new-img" src="" alt="Nueva firma" style="max-width: 150px; max-height: 100px; border: 1px solid #28a745; padding: 4px;">
+              </div>
+            </div>
+            <div class="mb-3">
               <label class="form-label">Nueva contraseña (opcional)</label>
               <input type="password" class="form-control" id="usuario-password" placeholder="Dejar vacío para no cambiar">
             </div>

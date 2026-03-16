@@ -363,6 +363,24 @@ function bindUserActions() {
         document.getElementById('usuario-rol').value = usuario.id_rol;
         document.getElementById('usuario-cargo').value = usuario.id_cargo || '';
         document.getElementById('usuario-password').value = '';
+        
+        // Mostrar firma actual si existe
+        const previewContainer = document.getElementById('firma-preview-container');
+        const previewNewContainer = document.getElementById('firma-preview-new');
+        const firmaInput = document.getElementById('usuario-firma');
+        
+        if (usuario.firma) {
+          const firmaUrl = usuario.firma.startsWith('http') ? usuario.firma : `${API_BASE}${usuario.firma}`;
+          document.getElementById('firma-preview').src = firmaUrl;
+          previewContainer.classList.remove('d-none');
+        } else {
+          previewContainer.classList.add('d-none');
+        }
+        
+        // Limpiar preview de nueva firma
+        previewNewContainer.classList.add('d-none');
+        firmaInput.value = '';
+        
         document.getElementById('modalUsuarioTitle').textContent = 'Editar usuario';
         document.getElementById('usuario-error').classList.add('d-none');
         modalUsuario.show();
@@ -428,6 +446,7 @@ async function saveUsuario() {
   const id_rol = parseInt(document.getElementById('usuario-rol').value);
   const id_cargo = document.getElementById('usuario-cargo').value ? parseInt(document.getElementById('usuario-cargo').value) : null;
   const password = document.getElementById('usuario-password').value.trim();
+  const firmaInput = document.getElementById('usuario-firma');
   const errBox = document.getElementById('usuario-error');
   errBox.classList.add('d-none');
 
@@ -438,6 +457,8 @@ async function saveUsuario() {
   }
 
   try {
+    let usuarioId = id;
+    
     if (id) {
       // Editar usuario
       const body = { nombre, documento, username, id_rol, id_cargo };
@@ -451,8 +472,27 @@ async function saveUsuario() {
         return;
       }
       const body = { nombre, documento, username, id_rol, id_cargo, pass_hash: password, estado: true };
-      await api.request('/users/create', { method: 'POST', body });
+      const respuesta = await api.request('/users/create', { method: 'POST', body });
+      usuarioId = respuesta.id_usuario || respuesta.id;
     }
+    
+    // Subir firma si se seleccionó un archivo
+    if (firmaInput.files && firmaInput.files.length > 0) {
+      const formData = new FormData();
+      formData.append('file', firmaInput.files[0]);
+      
+      try {
+        await fetch(`${API_BASE}/users/${usuarioId}/firma`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` },
+          body: formData
+        });
+      } catch (err) {
+        errBox.textContent = `Usuario guardado, pero error al cargar firma: ${err.message}`;
+        errBox.classList.remove('d-none');
+      }
+    }
+    
     modalUsuario.hide();
     loadUsuarios();
   } catch (err) {
@@ -797,11 +837,32 @@ window.addEventListener('DOMContentLoaded', () => {
     document.getElementById('form-usuario').reset();
     document.getElementById('usuario-id').value = '';
     document.getElementById('usuario-password').value = '';
+    document.getElementById('usuario-firma').value = '';
+    document.getElementById('firma-preview-container').classList.add('d-none');
+    document.getElementById('firma-preview-new').classList.add('d-none');
     document.getElementById('modalUsuarioTitle').textContent = 'Nuevo usuario';
     document.getElementById('usuario-error').classList.add('d-none');
     modalUsuario.show();
   });
   document.getElementById('usuario-save').addEventListener('click', saveUsuario);
+
+  // Event listener para preview de nueva firma
+  document.getElementById('usuario-firma').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    const previewNewContainer = document.getElementById('firma-preview-new');
+    const previewNewImg = document.getElementById('firma-preview-new-img');
+    
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        previewNewImg.src = event.target.result;
+        previewNewContainer.classList.remove('d-none');
+      };
+      reader.readAsDataURL(file);
+    } else {
+      previewNewContainer.classList.add('d-none');
+    }
+  });
 
   document.getElementById('btn-new-plantilla').addEventListener('click', () => {
     document.getElementById('form-plantilla').reset();
