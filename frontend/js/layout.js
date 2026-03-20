@@ -57,9 +57,7 @@ const layout = (function() {
       <div class="list-group list-group-flush sidebar" id="menu-sidebar">
         <a class="list-group-item list-group-item-action ${active==='dashboard'?'active':''}" href="./dashboard.html"><i class="bi bi-speedometer2 me-2"></i>Dashboard</a>
         <a class="list-group-item list-group-item-action ${active==='documentos'?'active':''}" href="./documentos.html"><i class="bi bi-file-earmark-text me-2"></i>Documentos</a>
-        <a class="list-group-item list-group-item-action ${active==='firmas'?'active':''}" href="#"><i class="bi bi-pencil-square me-2"></i>Firmas pendientes</a>
-        <a class="list-group-item list-group-item-action ${active==='tareas'?'active':''}" href="#"><i class="bi bi-list-check me-2"></i>Mis tareas</a>
-        <a class="list-group-item list-group-item-action ${active==='observaciones'?'active':''}" href="#"><i class="bi bi-chat-dots me-2"></i>Observaciones</a>
+        <a class="list-group-item list-group-item-action ${active==='tareas'?'active':''}" href="./mis_tareas.html"><i class="bi bi-list-check me-2"></i>Mis tareas</a>
         ${esAdmin ? `<a class="list-group-item list-group-item-action ${active==='admin'?'active':''}" href="./admin.html"><i class="bi bi-gear me-2"></i>Administración</a>` : ''}
       </div>`;
   }

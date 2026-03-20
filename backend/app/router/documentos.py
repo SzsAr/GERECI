@@ -257,6 +257,17 @@ def cambiar_estado_documento_endpoint(
             cambio_estado.nuevo_estado
         )
 
+        # Obtener estado resultante real (puede cambiar automáticamente,
+        # por ejemplo APROBADO_GERENCIA -> FIRMADO)
+        documento_post_cambio = crud_documentos.get_documento_by_id(db, documento_id)
+        if not documento_post_cambio:
+            raise HTTPException(status_code=404, detail="Documento no encontrado tras cambiar estado")
+        estado_resultante = (
+            documento_post_cambio.get('estado')
+            if isinstance(documento_post_cambio, dict)
+            else documento_post_cambio.estado
+        )
+
         # Registrar observaciones si es devolución
         if cambio_estado.nuevo_estado in ['DEVUELTO_JURIDICA', 'DEVUELTO_GERENCIA']:
             tipo_obs = 'JURIDICA' if cambio_estado.nuevo_estado == 'DEVUELTO_JURIDICA' else 'GERENCIA'
@@ -284,9 +295,13 @@ def cambiar_estado_documento_endpoint(
             logger.info(f"Firma registrada para usuario {user_token.id_usuario} en estado {cambio_estado.nuevo_estado}")
         
         # Si es FIRMADO (APROBADO_GERENCIA → FIRMADO), regenerar Word con todas las firmas
-        if cambio_estado.nuevo_estado == 'FIRMADO':
+        if estado_resultante == 'FIRMADO':
             # Asegurar que el usuario creador (quien elaboró) esté registrado como firma
-            usuario_genera = documento.get('usuario_genera') if isinstance(documento, dict) else documento.usuario_genera
+            usuario_genera = (
+                documento_post_cambio.get('usuario_genera')
+                if isinstance(documento_post_cambio, dict)
+                else documento_post_cambio.usuario_genera
+            )
             if usuario_genera:
                 registrar_firma_aprobacion(db, documento_id, usuario_genera)
                 logger.info(f"Firma del creador (usuario {usuario_genera}) registrada al pasar a FIRMADO")
@@ -304,7 +319,11 @@ def cambiar_estado_documento_endpoint(
             
             try:
                 # Obtener plantilla
-                id_plantilla = documento.get('id_plantilla') if isinstance(documento, dict) else documento.id_plantilla
+                id_plantilla = (
+                    documento_post_cambio.get('id_plantilla')
+                    if isinstance(documento_post_cambio, dict)
+                    else documento_post_cambio.id_plantilla
+                )
                 plantilla = get_plantilla_by_id(db, id_plantilla)
                 
                 if plantilla:
@@ -375,7 +394,7 @@ def cambiar_estado_documento_endpoint(
                 }
         
         # Si es FINALIZADO, asignar consecutivo y generar PDF final
-        if cambio_estado.nuevo_estado == 'FINALIZADO':
+        if estado_resultante == 'FINALIZADO':
             # Refrescar documento para obtener consecutivo asignado por trigger
             db.commit()  # Asegurar que el trigger se ejecutó
             documento_actualizado = crud_documentos.get_documento_by_id(db, documento_id)
@@ -509,7 +528,7 @@ def cambiar_estado_documento_endpoint(
         
         return {
             "message": "Estado del documento actualizado correctamente",
-            "nuevo_estado": cambio_estado.nuevo_estado
+            "nuevo_estado": estado_resultante
         }
     
     except HTTPException:

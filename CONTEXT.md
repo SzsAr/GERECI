@@ -1,165 +1,189 @@
-# Contexto de trabajo
+# CONTEXTO UNIFICADO GERECI
 
-## Estado actual del proyecto (24 Feb 2026)
+## Fecha de corte
+- 19 de marzo de 2026
 
-### Backend FastAPI
-- **Base URL**: http://127.0.0.1:8000
-- **Base de datos**: MySQL `gereci` en localhost
-- **Entorno**: Windows con venv activado en `C:\GERECI\venv`
+## Fuente de verdad
+- Este archivo reemplaza los contextos y bitacoras previas del directorio raiz.
+- Cualquier nuevo cambio funcional o tecnico debe actualizarse aqui.
 
-### Módulos implementados
-1. ✅ **Usuarios**: CRUD completo con id_cargo, permisos por rol
-2. ✅ **Documentos**: Flujo completo de creación → aprobación → firmas → PDF
-3. ✅ **Plantillas**: Sistema de campos dinámicos y tablas dinámicas
-4. ✅ **Firmas Digitales**: Sistema de registro y visualización
-5. ✅ **Roles y Permisos**: Control de acceso por módulo
+## Snapshot tecnico
+- Backend: FastAPI + SQLAlchemy (consultas SQL textuales)
+- Frontend: HTML + JavaScript vanilla + Bootstrap
+- Base de datos: MySQL (schema gereci)
+- Generacion documental: docxtpl + python-docx + Pillow + LibreOffice CLI
+- Auth: JWT (python-jose) + passlib (bcrypt)
 
-### Sistema de Usuarios
-- Endpoints: GET `/users/id/{id}`, GET `/users/all`, PUT `/users/{id}`, PUT `/users/{id}/inactivar`, DELETE `/users/{id}`, POST `/users/create`
-- Esquema `UserOut` expone `rol_nombre` y `cargo_nombre` con LEFT JOIN
-- Frontend `admin.js` muestra nombres de rol/cargo y gestiona CRUD completo
+## Rutas y componentes principales
+- App principal: backend/main.py
+- Auth y dependencias: backend/app/api/auth.py, backend/app/api/dependencies.py
+- Flujo de documentos: backend/app/router/documentos.py, backend/app/crud/documentos.py
+- Generacion Word/PDF y limpieza: backend/app/utils/document_generator.py
+- Firmas digitales: backend/app/crud/firmas_digitales.py, backend/app/router/firmas_digitales.py
+- Datos/tablas dinamicas de plantillas: backend/app/utils/dynamic_tables.py, backend/app/utils/dynamic_data.py
+- Frontend documentos: frontend/documentos.html, frontend/js/documentos.js
+- Frontend admin (usuarios, plantillas, carga firma): frontend/admin.html, frontend/js/admin.js
+- Cliente API frontend: frontend/js/api.js
 
-## ÚLTIMAS ACTUALIZACIONES (24 Feb 2026)
+## Estado funcional actual
 
-### ✅ SOLUCIÓN IMPLEMENTADA: Sistema de Firmas Digitales
-**Problema resuelto**: PDF final no mostraba campos de firmas
+### 1) Usuarios
+- CRUD operativo con joins de rol/cargo para visualizacion.
+- Carga de firma de usuario implementada en POST /users/{user_id}/firma.
+- Restricciones de firma: PNG/JPEG/WebP y maximo 100 KB.
 
-**Causa identificada**: Las firmas se inyectaban muy tarde (estado FINALIZADO), por lo que el Word no las mostraba y el PDF salía vacío.
+### 2) Documentos
+- Creacion de documento: POST /documentos/create.
+- Generacion de Word: POST /documentos/{id}/generar-word.
+- Cambio de estado (flujo principal): PUT /documentos/{id}/estado.
+- Consulta de transiciones validas: GET /documentos/{id}/transiciones.
+- Generacion PDF final: POST /documentos/{id}/generar-pdf (tambien se gatilla en finalizacion segun flujo).
 
-**Solución aplicada**: Cambiar punto de inyección de firmas al estado **FIRMADO** (antes de FINALIZADO).
+### 3) Firmas en documentos
+- Las firmas visibles se consolidan en estado FIRMADO (no en FINALIZADO).
+- Se usa contexto uniforme por rol:
+   - unidad_nombre, unidad_cargo, unidad_firma
+   - juridica_nombre, juridica_cargo, juridica_firma
+   - gerente_nombre, gerente_cargo, gerente_firma
+- En generacion de Word, las rutas de firma se convierten a InlineImage para insertar imagen real.
 
-#### Nuevo flujo de estados:
+### 4) Consecutivos y finalizacion
+- El consecutivo se asigna por trigger SQL al pasar a FINALIZADO.
+- Unicidad por tipo y consecutivo: (id_tipo, consecutivo).
+- Se genera PDF desde el Word final y luego se registra ruta_pdf_final.
+
+### 5) Limpieza de archivos
+- Al finalizar con PDF exitoso se intenta eliminar docx temporales.
+- Al devolver y al eliminar documento (BORRADOR/DEVUELTO_*) se intenta eliminar docx asociados.
+- La limpieza es tolerante a fallos (warning en logs, sin romper flujo principal).
+
+### 6) Dashboard operativo y KPIs
+- Dashboard actualizado para consumir datos reales desde frontend/js/dashboard.js.
+- KPIs activos:
+   - Documentos totales
+   - Pendientes de firma (derivados de tareas de revision por rol)
+   - Tareas del area (pendientes por accion)
+   - Observaciones (conteo API y fallback por devoluciones del creador)
+- Paneles operativos activos:
+   - Distribucion por estado
+   - Mi foco hoy (priorizacion por tipo de accion)
+   - Ultimos documentos con metadata clave
+- Boton de actualizacion manual del dashboard habilitado.
+- Logica de tareas pendiente del dashboard alineada con el modelo de Mis Tareas para consistencia funcional.
+- Ultimo ajuste de UI aplicado: rediseño del boton "Ver todos" en el bloque de ultimos documentos.
+- Archivos involucrados:
+   - frontend/dashboard.html
+   - frontend/js/dashboard.js
+   - frontend/css/custom.css
+
+## Flujo de estados vigente
+
+### Con revision juridica (ej. Resolucion)
+BORRADOR -> EN_REVISION_JURIDICA -> APROBADO_JURIDICA -> EN_REVISION_GERENCIAL -> APROBADO_GERENCIA -> FIRMADO -> FINALIZADO
+
+### Sin revision juridica (ej. Circular)
+BORRADOR -> EN_REVISION_GERENCIAL -> APROBADO_GERENCIA -> FIRMADO -> FINALIZADO
+
+### Devoluciones
+- EN_REVISION_JURIDICA -> DEVUELTO_JURIDICA -> EN_REVISION_JURIDICA
+- EN_REVISION_GERENCIAL -> DEVUELTO_GERENCIA -> (EN_REVISION_JURIDICA o EN_REVISION_GERENCIAL segun tipo)
+
+### Reglas importantes
+- Solo el creador del documento puede llevarlo a FINALIZADO.
+- Las transiciones se validan en backend segun el tipo documental.
+- APROBADO_JURIDICA avanza automatico a EN_REVISION_GERENCIAL.
+- APROBADO_GERENCIA avanza automatico a FIRMADO.
+
+## Seguridad y permisos
+- Autenticacion por /auth/token.
+- Si token expira o es invalido, frontend redirige a index.html y limpia token.
+- Si usuario esta inactivo (403 especifico), frontend tambien redirige a index.html.
+- Permisos por modulo/accion via verify_permissions(db, id_rol, id_modulo, accion).
+- Acciones base: insertar, seleccionar, actualizar, borrar.
+
+## Hallazgos tecnicos pendientes (deuda real detectada)
+
+### A) Endpoint legacy de firma
+- Existe endpoint POST /documentos/{id}/firmar que conserva logica vieja.
+- Ese flujo invoca asignar_consecutivo en CRUD, funcion no presente actualmente.
+- Riesgo: error si ese camino se usa para finalizar.
+
+### B) Endpoint /documentos/{id}/datos desalineado
+- Intenta acceder campos como si recibiera objeto ORM (id_documento, fecha_finalizacion, etc.).
+- El CRUD actual retorna dict con claves id, fecha_emision, etc.
+- Riesgo: respuesta rota o excepciones en runtime.
+
+### C) Consulta de firmas con columna incorrecta
+- En verificacion de firmas se usa join por d.id_tipo_documento.
+- La tabla documentos maneja id_tipo.
+- Riesgo: consulta incorrecta en ciertas rutas de verificacion.
+
+### D) Limpieza incompleta de nombre firmado
+- La limpieza intenta patron {id}_borrador_firmado.docx.
+- El archivo firmado principal se genera como {id}_firmado.docx.
+- Riesgo: residuos de archivos .docx.
+
+### E) Drift documental/SQL historico
+- Hay guias antiguas con endpoints y secuencias ya superadas.
+- El dump base y scripts de alter muestran evolucion de enum de estados.
+- Falta script SQL explicito en carpeta database para crear plantillas_tablas_dinamicas,
+   aunque el backend depende de esa tabla.
+
+## Prioridades recomendadas (ordenadas)
+1. Unificar y desactivar definitivamente rutas legacy de /documentos/{id}/firmar.
+2. Corregir endpoint /documentos/{id}/datos al shape real del CRUD.
+3. Corregir join de id_tipo_documento -> id_tipo en verificacion de firmas.
+4. Ajustar limpieza para contemplar {id}_firmado.docx.
+5. Consolidar scripts SQL faltantes para instalacion limpia desde cero.
+6. Ejecutar prueba integral del flujo BORRADOR -> FIRMADO -> FINALIZADO con evidencia.
+
+## Pendiente inmediato para retomar
+1. Validacion runtime del dashboard con datos reales en navegador (no solo validacion estatica).
+2. Validacion multi-rol (superadmin, juridica, gerencia, unidad) para confirmar conteos KPI y foco operativo.
+3. Revisar semantica final de KPI "observaciones" y "pendientes de firma" con criterio de negocio.
+4. Evaluar endpoint backend dedicado de resumen dashboard si se busca mayor rendimiento/consistencia.
+
+## Registro de cambios recientes (19 de marzo de 2026)
+
+### Cambio 1
+- Fecha: 19-03-2026
+- Cambio: Implementacion de dashboard operativo con KPIs reales y paneles de distribucion/foco.
+- Impacto: Se elimino estado placeholder del dashboard y se incorporo visibilidad operativa basada en datos de documentos y tareas por rol.
+- Estado: COMPLETADO (sin errores en validacion estatica de frontend/dashboard.html, frontend/js/dashboard.js y frontend/css/custom.css).
+
+### Cambio 2
+- Fecha: 19-03-2026
+- Cambio: Rediseño visual del boton "Ver todos" en dashboard.
+- Impacto: Mejora de jerarquia visual y usabilidad (hover/focus/feedback).
+- Estado: COMPLETADO.
+
+## Comandos operativos
+
+### Arranque rapido
 ```
-APROBADO_GERENCIA → FIRMADO (inyecta TODAS las firmas en Word)
-                       ↓
-                    FINALIZADO (asigna consecutivo + genera PDF)
+start_backend.bat
 ```
 
-#### Beneficios:
-- ✅ Usuario puede visualizar Word con firmas ANTES de finalizar
-- ✅ Separación clara: FIRMADO = firmado | FINALIZADO = emitido oficialmente
-- ✅ PDF correcto con todas las firmas visibles
-- ✅ Trazabilidad completa del flujo
-
-#### Archivos modificados:
-- `backend/app/router/documentos.py` (líneas 280-420) - Lógica de estados FIRMADO y FINALIZADO
-- `backend/app/crud/documentos.py` - Función `generar_context_con_firmas()`
-- `backend/app/utils/dynamic_data.py` - Función `actualizar_firmas_en_tabla_dinamica()`
-- `backend/app/utils/dynamic_tables.py` - Columnas uniformes de firmas
-
-#### Sistema de nombres uniformes:
-- Backend y BD usan: `unidad_*`, `juridica_*`, `gerente_*`
-- Columnas: `{rol}_nombre`, `{rol}_cargo`, `{rol}_firma`
-- Context incluye todas las firmas para generar Word completo
-
-### Actualizaciones previas (Feb 18, 2026)
-- ✅ Limpieza automática de `.docx`: Función `eliminar_archivo_documento()` agregada a `document_generator.py`
-- ✅ Al finalizar documento (FINALIZADO + PDF exitoso): Elimina `.docx` de `media/documentos/`
-- ✅ Al devolver documento (DEVUELTO_JURIDICA/GERENCIA): Elimina `.docx` para facilitar reedición
-- ✅ **MEJORA:** Ahora permite eliminar documentos en estados DEVUELTO_JURIDICA y DEVUELTO_GERENCIA
-- ✅ Al eliminar documento (BORRADOR, DEVUELTO_JURIDICA, DEVUELTO_GERENCIA): Elimina `.docx` asociados
-- ✅ Manejo robusto: No interrumpe flujos si falla eliminación de archivos
-- ✅ Logging: Registra intentos de eliminación (info si éxito, warning si falla)
-- ✅ Archivo TESTING_LIMPIEZA_DOCX.md con flujos testeables y checklist completo
-- ✅ Filtrado por asunto en tiempo real: Búsqueda clientside sin hacer requests
-- ✅ Removido botón "Filtrar" innecesario: Filtrados completamente automáticos
-- ✅ **SEGURIDAD:** Token expirado (401) redirige a login en lugar de mostrar error
-
-## Pendientes / próximos pasos
-1) **TESTING PRIORITARIO**: Probar flujo completo de firmas (BORRADOR → FIRMADO → FINALIZADO) con documento real
-2) Verificar que Word en estado FIRMADO muestre todas las firmas correctamente
-3) Validar que PDF final contenga firmas + consecutivo
-4) Probar flujo completo Usuarios: listar, crear (con cargo), editar, eliminar, toggle estado
-5) Dashboard KPI pendiente
-6) Plantillas módulo: Mejorar UI de gestión de campos dinámicos
-
-## Archivos tocados (24 Feb 2026) - Sistema de Firmas
-- `backend/app/router/documentos.py` - Bloque estado FIRMADO (inyección firmas) y FINALIZADO (solo consecutivo+PDF)
-- `backend/app/crud/documentos.py` - Función generar_context_con_firmas() con nombres uniformes
-- `backend/app/utils/dynamic_data.py` - Actualización de tablas dinámicas con datos de firmas
-- `backend/app/utils/dynamic_tables.py` - Creación de columnas uniformes (unidad_*, juridica_*, gerente_*)
-- `backend/app/crud/plantillas.py` - Documentación de columnas excluidas
-- Documentación: CHECKPOINT_FIRMAS.md, SOLUCION_FIRMAS_24FEB.md actualizados
-
-## Archivos tocados (18 Feb 2026) - Limpieza de archivos
-- backend/app/router/documentos.py (limpieza de archivos en endpoints finalizacion/eliminacion)
-- backend/app/utils/document_generator.py (nueva función eliminar_archivo_documento)
-
-## Notas rápidas
-
-### Sistema de Usuarios
-- Endpoint detalle usuario: `/users/id/{user_id}` (evita conflicto con `/users/all`)
-- `UserCreate` requiere `estado` y `pass_hash` >= 8 chars
-- Consultas usan `rol_nombre` y `cargo_nombre` con LEFT JOIN
-
-### Sistema de Documentos y Firmas
-- **Estado FIRMADO**: Inyecta TODAS las firmas en Word (unidad, jurídica si aplica, gerente)
-- **Estado FINALIZADO**: Solo asigna consecutivo y genera PDF del Word ya firmado
-- Función `eliminar_archivo_documento(documento_id, ruta_relativa)` es idempotente y segura
-- Context de firmas usa nombres uniformes: `{rol}_nombre`, `{rol}_cargo`, `{rol}_firma`
-- Registro de firma del creador (Unidad) se hace al pasar a estado FIRMADO
-- Mapeo de roles: 1=Unidad, 2=Gerencia, 3=Jurídica, 4=Otra
-
-### Flujo de aprobación
-- **Con revisión jurídica**: BORRADOR → EN_REVISION_JURIDICA → APROBADO_JURIDICA → EN_REVISION_GERENCIAL → APROBADO_GERENCIA → FIRMADO → FINALIZADO
-- **Sin revisión jurídica**: BORRADOR → EN_REVISION_GERENCIAL → APROBADO_GERENCIA → FIRMADO → FINALIZADO
-- Devoluciones posibles: EN_REVISION_JURIDICA/GERENCIAL pueden devolver a BORRADOR
-
-### Limpieza de archivos
-- Al finalizar documento (FINALIZADO + PDF exitoso): Elimina `.docx` de `media/documentos/`
-- Al devolver documento (DEVUELTO_JURIDICA/GERENCIA): Elimina `.docx` para facilitar reedición
-- Al eliminar documento (BORRADOR, DEVUELTO_*): Elimina `.docx` asociados
-- Manejo robusto: No interrumpe flujos si falla eliminación
-
-## Cómo levantar el proyecto
-
-### Opción 1: Script automatizado
-```bash
-& C:\GERECI\start_backend.bat
+### Arranque manual
 ```
-
-### Opción 2: Manual
-```bash
-cd C:\GERECI\backend
+cd backend
 C:\GERECI\venv\Scripts\python.exe -m uvicorn main:app --reload
 ```
 
-### Verificar que está corriendo
-- Backend: http://127.0.0.1:8000
-- Docs API: http://127.0.0.1:8000/docs
-- Frontend: Abrir `C:\GERECI\frontend\index.html` en navegador
+### URLs
+- API: http://127.0.0.1:8000
+- Swagger: http://127.0.0.1:8000/docs
+- Frontend login: frontend/index.html
 
-## Referencias de documentación
+## Checklist corto de validacion funcional
+1. Crear documento y generar Word.
+2. Mover por transiciones validas segun tipo (con/sin juridica).
+3. Confirmar Word en FIRMADO con imagenes de firma visibles.
+4. Finalizar y verificar consecutivo + PDF.
+5. Validar limpieza de docx al devolver/finalizar/eliminar.
+6. Simular token expirado y confirmar redireccion a login.
 
-Para información detallada, consultar:
-- **CHECKPOINT_FIRMAS.md** - Solución completa del sistema de firmas (24 Feb 2026)
-- **SOLUCION_FIRMAS_24FEB.md** - Comparación antes/después y flujo detallado
-- **README_MODULO_DOCUMENTOS.md** - Funcionalidades del módulo de documentos
-- **IMPLEMENTACION_DOCUMENTOS.md** - Detalles técnicos de implementación
-- **PERMISOS_POR_MODULOS.md** - Sistema de permisos y roles
-- **AGENT_CONTEXT.md** - Contexto técnico para agentes de soporte
-- **TESTING_LIMPIEZA_DOCX.md** - Guía de testing de limpieza de archivos
-
-## Stack tecnológico
-
-### Backend
-- FastAPI + Uvicorn
-- SQLAlchemy + PyMySQL
-- python-docx + docxtpl (generación Word)
-- Pillow (procesamiento imágenes)
-- LibreOffice CLI (conversión PDF)
-- python-jose + passlib (autenticación)
-
-### Frontend
-- HTML5 + JavaScript (Vanilla)
-- Bootstrap 5.3 + Bootstrap Icons
-- API REST con fetch()
-
-### Base de datos
-- MySQL 8.0+
-- Tablas principales: usuarios, documentos, tipos_documentos, plantillas, firmas_digitales, roles, permisos, control_consecutivos
-
----
-
-**Última actualización**: 24 de Febrero de 2026  
-**Estado del sistema**: ✅ Operativo con firmas funcionando correctamente
+## Regla de mantenimiento de este archivo
+- Mantener secciones estables y versionadas por fecha de corte.
+- Agregar cambios en formato: Fecha -> Cambio -> Impacto -> Estado.
+- Evitar crear nuevos archivos de contexto paralelos.

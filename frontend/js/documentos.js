@@ -8,6 +8,26 @@ let documentoActual = null;
 let plantillasData = []; // Almacenar datos completos de plantillas
 let documentosCache = []; // Almacenar documentos para filtrado local
 
+const CAMPOS_AUTOMATICOS = new Set([
+  'consecutivo',
+  'fecha',
+  'fecha_emision',
+  'fecha_creacion',
+  'gerente_firma',
+  'gerente_nombre',
+  'gerente_cargo',
+  'unidad_firma',
+  'unidad_nombre',
+  'unidad_cargo',
+  'juridica_firma',
+  'juridica_nombre',
+  'juridica_cargo'
+]);
+
+function esCampoAutomatico(nombreCampo) {
+  return CAMPOS_AUTOMATICOS.has((nombreCampo || '').toString().trim().toLowerCase());
+}
+
 function initDocumentosPage() {
   modalNuevoDoc = new bootstrap.Modal(document.getElementById('modalNuevoDoc'));
   modalVerDoc = new bootstrap.Modal(document.getElementById('modalVerDoc'));
@@ -292,11 +312,17 @@ async function cargarCamposPlantilla() {
     // Mantener el orden de inserción de los campos
     const campos = Object.keys(plantilla.campos_json);
     if (campos.length > 0) {
-      camposSection.style.display = 'block';
+      let camposRenderizados = 0;
       // Iterar en el mismo orden que fueron creados
       for (const key of campos) {
+        if (esCampoAutomatico(key)) {
+          continue;
+        }
         agregarCampoInput('nuevo-campos-container', key, plantilla.campos_json[key]);
+        camposRenderizados += 1;
       }
+
+      camposSection.style.display = camposRenderizados > 0 ? 'block' : 'none';
     } else {
       camposSection.style.display = 'none';
     }
@@ -332,7 +358,7 @@ function getCamposAsJSON(containerId) {
   document.querySelectorAll(`#${containerId} .campo-valor`).forEach(input => {
     const nombre = input.getAttribute('data-campo-nombre');
     const valor = input.value.trim();
-    if (nombre) campos[nombre] = valor;
+    if (nombre && !esCampoAutomatico(nombre)) campos[nombre] = valor;
   });
   return Object.keys(campos).length > 0 ? campos : null;
 }
@@ -766,7 +792,12 @@ async function cargarCamposParaEditar(documento) {
     let html = '<div class="row g-3">';
     
     // Iterar sobre los campos (campos_json es un objeto {'nombre_campo': 'tipo_dato'})
+    let camposEditables = 0;
     for (const [nombre_campo, tipo_dato] of Object.entries(plantilla.campos_json)) {
+      if (esCampoAutomatico(nombre_campo)) {
+        continue;
+      }
+
       const valor = documento.valores_campos && documento.valores_campos[nombre_campo] 
         ? documento.valores_campos[nombre_campo] 
         : '';
@@ -828,6 +859,14 @@ async function cargarCamposParaEditar(documento) {
           ${inputHtml}
         </div>
       `;
+
+      camposEditables += 1;
+    }
+
+    if (camposEditables === 0) {
+      container.innerHTML = '<p class="text-muted">Esta plantilla solo tiene campos automáticos del sistema.</p>';
+      sectionEditar.classList.remove('d-none');
+      return;
     }
     
     html += '</div>';

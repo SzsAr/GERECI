@@ -3,6 +3,7 @@ const API_BASE = 'http://localhost:8000';
 const api = {
   async request(path, { method = 'GET', headers = {}, body = null } = {}) {
     const token = localStorage.getItem('token');
+    const isLoginRequest = path === '/auth/token';
 
     // Configurar headers básicos
     const finalHeaders = { ...headers };
@@ -26,40 +27,30 @@ const api = {
 
     if (!res.ok) {
       const text = await res.text();
+      let message = text || 'Request failed';
+
       try {
         const errJson = text ? JSON.parse(text) : {};
-        const message = errJson.detail || errJson.message || text || 'Request failed';
-        
-        // Si token expirado o inválido (401)
-        if (res.status === 401) {
-          localStorage.removeItem('token');
-          window.location.href = './index.html';
-          return;
-        }
-        
-        // Si el usuario está inactivo (403)
-        if (res.status === 403 && message.includes('Usuario inactivo')) {
-          localStorage.removeItem('token');
-          window.location.href = './index.html';
-          return;
-        }
-        
-        throw new Error(message);
-      } catch (e) {
-        // Si es error de autenticación, redirigir al login
-        if (res.status === 401) {
-          localStorage.removeItem('token');
-          window.location.href = './index.html';
-          return;
-        }
-        // Si no es JSON, usar texto crudo
-        if (e instanceof Error && e.message.includes('Usuario inactivo')) {
-          localStorage.removeItem('token');
-          window.location.href = './index.html';
-          return;
-        }
-        throw new Error(text || 'Request failed');
+        message = errJson.detail || errJson.message || text || 'Request failed';
+      } catch (_e) {
+        // Si no es JSON, se conserva el texto crudo.
       }
+
+      // Si token expirado o inválido (401), redirigir excepto durante login.
+      if (res.status === 401 && !isLoginRequest) {
+        localStorage.removeItem('token');
+        window.location.href = './index.html';
+        return;
+      }
+
+      // Si el usuario está inactivo (403), redirigir excepto durante login.
+      if (res.status === 403 && message.includes('Usuario inactivo') && !isLoginRequest) {
+        localStorage.removeItem('token');
+        window.location.href = './index.html';
+        return;
+      }
+
+      throw new Error(message);
     }
 
     const text = await res.text();

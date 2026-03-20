@@ -3,6 +3,7 @@ CRUD operations for documentos
 """
 from sqlalchemy.orm import Session
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from typing import Optional, List
 import logging
 import json
@@ -14,6 +15,41 @@ from app.crud.plantillas import get_plantilla_by_id
 logger = logging.getLogger(__name__)
 
 
+# Campos reservados/autogenerados que no deben venir desde el usuario
+AUTO_SYSTEM_FIELDS = {
+    "consecutivo",
+    "fecha",
+    "fecha_emision",
+    "fecha_creacion",
+    "gerente_firma",
+    "gerente_nombre",
+    "gerente_cargo",
+    "unidad_firma",
+    "unidad_nombre",
+    "unidad_cargo",
+    "juridica_firma",
+    "juridica_nombre",
+    "juridica_cargo",
+}
+
+
+def filtrar_campos_usuario(valores_campos: Optional[dict]) -> dict:
+    """
+    Remover del payload de usuario los campos automáticos/sistema.
+    """
+    if not isinstance(valores_campos, dict):
+        return {}
+
+    campos_limpios = {}
+    for key, value in valores_campos.items():
+        key_normalizada = str(key).strip().lower()
+        if key_normalizada in AUTO_SYSTEM_FIELDS:
+            continue
+        campos_limpios[key] = value
+
+    return campos_limpios
+
+
 def create_documento(db: Session, documento: DocumentoCreate, usuario_genera: int) -> Optional[int]:
     """
     Crear un nuevo documento en estado BORRADOR.
@@ -21,10 +57,13 @@ def create_documento(db: Session, documento: DocumentoCreate, usuario_genera: in
     Retorna el ID del documento creado.
     """
     try:
+        # Ignorar campos automáticos enviados por el cliente
+        valores_campos_limpios = filtrar_campos_usuario(documento.valores_campos)
+
         # Serializar valores_campos si vienen como dict
         valores_campos_json = None
-        if documento.valores_campos:
-            valores_campos_json = json.dumps(documento.valores_campos)
+        if valores_campos_limpios:
+            valores_campos_json = json.dumps(valores_campos_limpios)
         
         query = text("""
             INSERT INTO documentos (
@@ -56,7 +95,7 @@ def create_documento(db: Session, documento: DocumentoCreate, usuario_genera: in
                 db,
                 documento.id_plantilla,
                 documento_id,
-                documento.valores_campos or {},
+                valores_campos_limpios,
                 plantilla['nombre_tabla']
             )
         
@@ -173,7 +212,9 @@ def update_documento(db: Session, documento_id: int,
         
         # Serializar valores_campos si existe
         if 'valores_campos' in fields and fields['valores_campos'] is not None:
-            fields['valores_campos'] = json.dumps(fields['valores_campos'])
+            fields['valores_campos'] = json.dumps(
+                filtrar_campos_usuario(fields['valores_campos'])
+            )
         
         set_clause = ", ".join([f"{key} = :{key}" for key in fields])
         fields["documento_id"] = documento_id
@@ -342,6 +383,18 @@ def cambiar_estado_documento(db: Session, documento_id: int, nuevo_estado: str) 
     except ValueError as e:
         logger.error(f"Error de validación: {e}")
         raise
+    except IntegrityError as e:
+        db.rollback()
+        detalle = str(e).lower()
+        logger.error(f"Error de integridad al cambiar estado del documento: {e}")
+
+        if "consecutivo" in detalle or "duplicate entry" in detalle:
+            raise Exception(
+                "Conflicto de consecutivo al finalizar. "
+                "Verifique trigger e indice de consecutivos por tipo de documento."
+            )
+
+        raise Exception("Error de integridad al cambiar estado")
     except Exception as e:
         db.rollback()
         logger.error(f"Error al cambiar estado del documento: {e}")

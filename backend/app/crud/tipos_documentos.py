@@ -21,8 +21,18 @@ def create_tipo_documento(db: Session, nombre: str, codigo: str, requiere_juridi
             "codigo": codigo,
             "requiere_juridica": requiere_juridica
         })
+
+        nuevo_tipo_id = result.lastrowid
+
+        # Inicializar contador independiente para el nuevo tipo
+        db.execute(text("""
+            INSERT INTO control_consecutivos (id_tipo_documento, ultimo_numero)
+            VALUES (:id_tipo_documento, 0)
+            ON DUPLICATE KEY UPDATE ultimo_numero = ultimo_numero
+        """), {"id_tipo_documento": nuevo_tipo_id})
+
         db.commit()
-        return result.lastrowid
+        return nuevo_tipo_id
     except Exception as e:
         db.rollback()
         logger.error(f"Error al crear tipo de documento: {e}")

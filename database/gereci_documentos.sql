@@ -44,7 +44,7 @@ CREATE TABLE `documentos` (
   `estado` enum('BORRADOR','EN_REVISION_JURIDICA','EN_REVISION_GERENCIAL','APROBADO_JURIDICA','FIRMADO','DEVUELTO_JURIDICA','DEVUELTO_GERENCIA','PENDIENTE_FINALIZACION','FINALIZADO') NOT NULL DEFAULT 'BORRADOR',
   PRIMARY KEY (`id`),
   UNIQUE KEY `id` (`id`),
-  UNIQUE KEY `consecutivo` (`consecutivo`),
+  UNIQUE KEY `uq_documentos_tipo_consecutivo` (`id_tipo`,`consecutivo`),
   KEY `id_plantilla` (`id_plantilla`),
   KEY `id_tipo` (`id_tipo`),
   KEY `usuario_genera` (`usuario_genera`),
@@ -84,7 +84,7 @@ DELIMITER ;;
           FOR UPDATE;
 
         SET v_consecutivo = IFNULL(v_consecutivo, 0) + 1;
-        SET NEW.consecutivo = v_consecutivo;
+        SET NEW.consecutivo = LPAD(v_consecutivo, 4, '0');
 
         UPDATE control_consecutivos
            SET ultimo_numero = v_consecutivo

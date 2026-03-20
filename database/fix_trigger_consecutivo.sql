@@ -1,7 +1,13 @@
--- Script para corregir el trigger de asignación de consecutivos
--- Problema: El campo consecutivo es VARCHAR pero se estaba asignando un INT
+-- Script para corregir consecutivos por tipo de documento
+-- Objetivo:
+-- 1) Consecutivo numerico con formato fijo de 4 digitos (0001, 0002, ...)
+-- 2) Consecutivo independiente por tipo (id_tipo)
 
 DELIMITER ;;
+
+-- Ajustar restriccion de unicidad: por tipo + consecutivo
+ALTER TABLE documentos DROP INDEX consecutivo ;;
+ALTER TABLE documentos ADD UNIQUE KEY uq_documentos_tipo_consecutivo (id_tipo, consecutivo) ;;
 
 -- Eliminar el trigger existente
 DROP TRIGGER IF EXISTS `trg_doc_set_consecutivo` ;;
@@ -10,7 +16,6 @@ DROP TRIGGER IF EXISTS `trg_doc_set_consecutivo` ;;
 CREATE TRIGGER `trg_doc_set_consecutivo` BEFORE UPDATE ON `documentos` FOR EACH ROW
 BEGIN
     DECLARE v_consecutivo INT;
-    DECLARE v_consecutivo_str VARCHAR(255);
 
     -- Solo al pasar a FINALIZADO y si aún no tiene consecutivo
     IF NEW.estado = 'FINALIZADO' AND (NEW.consecutivo IS NULL OR NEW.consecutivo = '') THEN
@@ -23,12 +28,9 @@ BEGIN
 
         -- Incrementar el contador
         SET v_consecutivo = IFNULL(v_consecutivo, 0) + 1;
-        
-        -- Convertir a VARCHAR con formato de 4 dígitos (ej: 0001, 0002)
-        SET v_consecutivo_str = LPAD(v_consecutivo, 4, '0');
-        
-        -- Asignar el consecutivo formateado al documento
-        SET NEW.consecutivo = v_consecutivo_str;
+
+        -- Asignar consecutivo con padding a 4 digitos (ej: 0001, 0002)
+        SET NEW.consecutivo = LPAD(v_consecutivo, 4, '0');
 
         -- Actualizar el contador en la tabla de control
         UPDATE control_consecutivos

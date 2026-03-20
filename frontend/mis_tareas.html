@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mis Tareas - GERECI</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+  <style>
+    body { display: flex; flex-direction: column; min-height: 100vh; }
+    #app-navbar { flex-shrink: 0; }
+    .container-fluid { flex: 1; }
+    main { flex: 1; padding: 2rem; }
+    #app-footer { flex-shrink: 0; }
+    .kpi-card {
+      border: 0;
+      border-left: 4px solid #0d6efd;
+      background: linear-gradient(135deg, #ffffff 0%, #f5f8ff 100%);
+    }
+    .kpi-title {
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #6c757d;
+      margin-bottom: 0.15rem;
+    }
+    .kpi-value {
+      font-size: 1.65rem;
+      font-weight: 700;
+      line-height: 1.1;
+      color: #212529;
+    }
+    .filtro-rapido.is-active {
+      background-color: #0d6efd;
+      border-color: #0d6efd;
+      color: #fff;
+    }
+    .acciones-inline {
+      display: inline-flex;
+      gap: 0.25rem;
+      justify-content: flex-end;
+      align-items: center;
+    }
+    .asunto-truncate {
+      max-width: 320px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      display: inline-block;
+      vertical-align: bottom;
+    }
+    .estado-badge {
+      font-weight: 500;
+      padding: 0.45rem 0.7rem;
+      border-radius: 4px;
+    }
+    .accion-badge {
+      font-weight: 600;
+      font-size: 0.78rem;
+      padding: 0.35rem 0.55rem;
+      border-radius: 4px;
+    }
+    .estado-borrador { background-color: #e7e7e7; color: #333; }
+    .estado-en-revision-juridica { background-color: #fff3cd; color: #856404; }
+    .estado-en-revision-gerencial { background-color: #ffc107; color: #000; }
+    .estado-aprobado-juridica { background-color: #d1ecf1; color: #0c5460; }
+    .estado-aprobado-gerencia { background-color: #17a2b8; color: #fff; }
+    .estado-firmado { background-color: #28a745; color: #fff; font-weight: bold; }
+    .estado-devuelto-juridica { background-color: #f8d7da; color: #721c24; }
+    .estado-devuelto-gerencia { background-color: #dc3545; color: #fff; }
+    .estado-pendiente-finalizacion { background-color: #fd7e14; color: #fff; }
+    .estado-finalizado { background-color: #155724; color: #fff; font-weight: bold; }
+    .table-sm { font-size: 0.9rem; }
+    .btn-sm { padding: 0.25rem 0.5rem; font-size: 0.85rem; }
+    .estado-step { margin-top: 1rem; padding: 1rem; background: #f8f9fa; border-left: 4px solid #007bff; }
+  </style>
+</head>
+<body class="bg-light">
+  <div id="app-navbar"></div>
+
+  <div class="container-fluid">
+    <div class="row">
+      <nav class="col-md-3 col-lg-2 sidebar bg-white shadow-sm p-3" id="app-sidebar"></nav>
+
+      <main class="col-md-9 col-lg-10">
+        <div class="row g-2 mb-3" id="resumen-operativo">
+          <div class="col-md-4">
+            <div class="card kpi-card shadow-sm h-100">
+              <div class="card-body py-3">
+                <div class="kpi-title">Pendientes Totales</div>
+                <div id="kpi-total" class="kpi-value">0</div>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-4">
+            <div class="card kpi-card shadow-sm h-100" style="border-left-color:#ffc107;">
+              <div class="card-body py-3">
+                <div class="kpi-title">Por Revisar Ahora</div>
+                <div id="kpi-revisar" class="kpi-value">0</div>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-4">
+            <div class="card kpi-card shadow-sm h-100" style="border-left-color:#198754;">
+              <div class="card-body py-3">
+                <div class="kpi-title">Por Finalizar</div>
+                <div id="kpi-finalizar" class="kpi-value">0</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card mb-3">
+          <div class="card-body">
+            <h5 class="card-title mb-3">Mis tareas pendientes</h5>
+            <div class="row g-2 mb-2">
+              <div class="col-md-4">
+                <select id="filtro-accion" class="form-select form-select-sm">
+                  <option value="">Todas las acciones</option>
+                  <option value="ENVIAR_REVISION">Enviar a revisión</option>
+                  <option value="REVISION_JURIDICA">Revisión jurídica</option>
+                  <option value="REVISION_GERENCIA">Revisión gerencia</option>
+                  <option value="CORREGIR_REENVIAR">Corregir y reenviar</option>
+                  <option value="FINALIZAR">Finalizar</option>
+                </select>
+              </div>
+              <div class="col-md-6">
+                <input type="text" id="filtro-asunto" class="form-control form-control-sm" placeholder="Buscar por asunto...">
+              </div>
+              <div class="col-md-1">
+                <button id="btn-recargar" class="btn btn-sm btn-primary w-100">
+                  <i class="bi bi-arrow-clockwise"></i> Recargar
+                </button>
+              </div>
+              <div class="col-md-1">
+                <button id="btn-limpiar-filtros" class="btn btn-sm btn-outline-secondary w-100">
+                  <i class="bi bi-eraser"></i> Limpiar
+                </button>
+              </div>
+            </div>
+
+            <div class="d-flex flex-wrap gap-2 mb-2" id="filtros-rapidos">
+              <button type="button" class="btn btn-sm btn-outline-primary filtro-rapido is-active" data-accion="">Todas</button>
+              <button type="button" class="btn btn-sm btn-outline-primary filtro-rapido" data-accion="REVISION_JURIDICA">Revisión Jurídica</button>
+              <button type="button" class="btn btn-sm btn-outline-primary filtro-rapido" data-accion="REVISION_GERENCIA">Revisión Gerencia</button>
+              <button type="button" class="btn btn-sm btn-outline-primary filtro-rapido" data-accion="CORREGIR_REENVIAR">Corregir y reenviar</button>
+              <button type="button" class="btn btn-sm btn-outline-primary filtro-rapido" data-accion="FINALIZAR">Finalizar</button>
+            </div>
+
+            <small id="resumen-filtros" class="text-muted"></small>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="table-responsive">
+            <table class="table table-sm table-hover mb-0">
+              <thead class="table-light">
+                <tr>
+                  <th style="width: 60px;">ID</th>
+                  <th>Asunto</th>
+                  <th style="width: 130px;">Tipo</th>
+                  <th style="width: 130px;">Creado por</th>
+                  <th style="width: 150px;">Estado</th>
+                  <th style="width: 170px;">Acción pendiente</th>
+                  <th style="width: 165px;">Fecha</th>
+                  <th style="width: 220px;" class="text-end">Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="tabla-tareas">
+                <tr><td colspan="8" class="text-muted text-center py-3">Cargando...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <div id="app-footer"></div>
+
+  <div id="toast-container" class="toast-container position-fixed bottom-0 end-0 p-3"></div>
+
+  <div class="modal fade" id="modalVerDoc" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="modalVerDocTitle">Documento</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div id="ver-doc-error" class="alert alert-danger d-none" role="alert"></div>
+
+          <div class="row mb-3">
+            <div class="col-md-6">
+              <p><strong>ID:</strong> <span id="ver-id"></span></p>
+              <p><strong>Asunto:</strong> <span id="ver-asunto"></span></p>
+              <p><strong>Tipo:</strong> <span id="ver-tipo"></span></p>
+            </div>
+            <div class="col-md-6">
+              <p><strong>Creado:</strong> <span id="ver-fecha"></span></p>
+              <p><strong>Creado por:</strong> <span id="ver-creador"></span></p>
+              <p><strong>Estado actual:</strong> <span id="ver-estado" class="estado-badge"></span></p>
+            </div>
+          </div>
+
+          <div class="estado-step" id="ver-estado-info"></div>
+
+          <div id="section-observaciones-historial" class="d-none mb-3">
+            <h6><i class="bi bi-chat-left-text"></i> Observaciones de devolución</h6>
+            <div id="ver-observaciones-container" class="small"></div>
+          </div>
+
+          <div id="section-editar-campos" class="d-none mb-3">
+            <h6><i class="bi bi-pencil-square"></i> Editar campos del documento</h6>
+            <div class="alert alert-warning small">
+              <i class="bi bi-exclamation-triangle"></i> Después de editar, el documento Word se regenerará automáticamente con los nuevos valores.
+            </div>
+            <div id="ver-campos-container"></div>
+            <button type="button" id="btn-guardar-campos" class="btn btn-sm btn-primary mt-2">
+              <i class="bi bi-save"></i> Guardar cambios y regenerar Word
+            </button>
+          </div>
+
+          <div class="row g-2 mb-3">
+            <div class="col-md-4">
+              <a id="link-descargar-word" href="#" class="btn btn-sm btn-info w-100 d-none" target="_blank">
+                <i class="bi bi-file-word"></i> Descargar Word
+              </a>
+            </div>
+            <div class="col-md-4">
+              <a id="link-descargar-pdf" href="#" class="btn btn-sm btn-danger w-100 d-none" target="_blank">
+                <i class="bi bi-file-pdf"></i> Descargar PDF
+              </a>
+              <button id="btn-generar-pdf" type="button" class="btn btn-sm btn-success w-100 d-none">
+                <i class="bi bi-file-earmark-pdf"></i> Generar PDF
+              </button>
+            </div>
+            <div class="col-md-4"></div>
+          </div>
+
+          <div id="section-preview" class="d-none mb-3">
+            <h6>Previsualización del documento</h6>
+            <div id="preview-loading" class="alert alert-info d-none">Generando previsualización...</div>
+            <iframe id="iframe-preview" style="width: 100%; height: 600px; border: 1px solid #ddd; display: none;"></iframe>
+          </div>
+
+          <div id="section-acciones" class="d-none">
+            <h6>Acciones disponibles</h6>
+            <div id="acciones-container" class="d-flex gap-2 flex-wrap">
+              <button id="btn-enviar-revision" type="button" class="btn btn-primary d-none">
+                <i class="bi bi-send"></i> Enviar a Revisión
+              </button>
+              <button id="btn-aprobar" type="button" class="btn btn-success d-none">
+                <i class="bi bi-check-circle"></i> Aprobar
+              </button>
+              <button id="btn-devolver" type="button" class="btn btn-warning d-none">
+                <i class="bi bi-arrow-counterclockwise"></i> Devolver
+              </button>
+              <button id="btn-finalizar" type="button" class="btn btn-success d-none">
+                <i class="bi bi-check2-all"></i> Finalizar
+              </button>
+            </div>
+          </div>
+
+          <div id="section-observaciones" class="d-none mt-3">
+            <label class="form-label">Observaciones:</label>
+            <textarea id="textarea-observaciones" class="form-control" rows="3" placeholder="Ingrese las observaciones..."></textarea>
+            <button id="btn-enviar-observaciones" type="button" class="btn btn-warning btn-sm mt-2">
+              Confirmar devolución
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="./js/layout.js"></script>
+  <script src="./js/api.js"></script>
+  <script src="./js/mis_tareas.js"></script>
+  <script>
+    window.addEventListener('DOMContentLoaded', () => {
+      layout.renderNavbar();
+      layout.renderSidebar('tareas');
+      layout.renderFooter();
+      initMisTareasPage();
+    });
+  </script>
+</body>
+</html>
