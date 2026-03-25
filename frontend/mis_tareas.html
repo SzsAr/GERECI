@@ -6,6 +6,7 @@
   <title>Mis Tareas - GERECI</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+  <link rel="icon" href="media/icon.jpg" type="image/png">
   <style>
     body { display: flex; flex-direction: column; min-height: 100vh; }
     #app-navbar { flex-shrink: 0; }
@@ -73,6 +74,28 @@
     .table-sm { font-size: 0.9rem; }
     .btn-sm { padding: 0.25rem 0.5rem; font-size: 0.85rem; }
     .estado-step { margin-top: 1rem; padding: 1rem; background: #f8f9fa; border-left: 4px solid #007bff; }
+    #ver-campos-container .campo-edit-item {
+      margin-bottom: 1.25rem !important;
+      padding: 0.75rem;
+      border: 1px solid #e9ecef;
+      border-radius: 0.5rem;
+      background: #fff;
+    }
+    #ver-campos-container .campo-edit-item .form-label {
+      display: block;
+      margin-bottom: 0.5rem;
+    }
+    #modalVerDoc .tox-tinymce,
+    #modalVerDoc .tox {
+      z-index: 1060;
+    }
+    .tox-tinymce-aux,
+    .tox-dialog,
+    .mce-container,
+    .moxman-window,
+    .tam-assetmanager-root {
+      z-index: 2000 !important;
+    }
   </style>
 </head>
 <body class="bg-light">
@@ -181,7 +204,7 @@
   <div id="toast-container" class="toast-container position-fixed bottom-0 end-0 p-3"></div>
 
   <div class="modal fade" id="modalVerDoc" tabindex="-1">
-    <div class="modal-dialog modal-lg">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
       <div class="modal-content">
         <div class="modal-header">
           <h5 class="modal-title" id="modalVerDocTitle">Documento</h5>
@@ -275,6 +298,7 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tinymce@6.8.3/tinymce.min.js"></script>
   <script src="./js/layout.js"></script>
   <script src="./js/api.js"></script>
   <script src="./js/mis_tareas.js"></script>

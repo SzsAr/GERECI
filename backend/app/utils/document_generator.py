@@ -4,9 +4,12 @@ Utilidades para generar y manipular documentos Word y PDF
 import os
 import subprocess
 import logging
+import re
+import html
+import shutil
 from pathlib import Path
 from typing import Optional, Dict, Any
-from docxtpl import DocxTemplate, InlineImage
+from docxtpl import DocxTemplate, InlineImage, RichText
 from docx import Document
 from docx.shared import Pt, RGBColor, Inches, Mm
 from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -23,6 +26,186 @@ FIRMAS_DIR = MEDIA_DIR / "firmas"
 # Crear directorios si no existen
 DOCUMENTOS_DIR.mkdir(parents=True, exist_ok=True)
 FIRMAS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _html_a_texto_word(valor: Any) -> Any:
+    """
+    Convierte HTML simple a texto plano con saltos de línea y viñetas
+    para mantener compatibilidad en plantillas docxtpl.
+    """
+    if not isinstance(valor, str):
+        return valor
+
+    contenido = valor.strip()
+    if not contenido:
+        return ""
+
+    # Si no parece HTML, conservar tal cual (texto plano clásico).
+    if not re.search(r"<[^>]+>", contenido):
+        return contenido
+
+    # Quitar bloques no imprimibles.
+    contenido = re.sub(r"<\s*script[^>]*>.*?<\s*/\s*script\s*>", "", contenido, flags=re.IGNORECASE | re.DOTALL)
+    contenido = re.sub(r"<\s*style[^>]*>.*?<\s*/\s*style\s*>", "", contenido, flags=re.IGNORECASE | re.DOTALL)
+
+    # Mapear estructura básica de HTML a texto.
+    contenido = re.sub(r"<\s*br\s*/?\s*>", "\n", contenido, flags=re.IGNORECASE)
+    contenido = re.sub(r"<\s*/\s*p\s*>", "\n", contenido, flags=re.IGNORECASE)
+    contenido = re.sub(r"<\s*p[^>]*>", "", contenido, flags=re.IGNORECASE)
+    contenido = re.sub(r"<\s*/\s*div\s*>", "\n", contenido, flags=re.IGNORECASE)
+    contenido = re.sub(r"<\s*div[^>]*>", "", contenido, flags=re.IGNORECASE)
+    contenido = re.sub(r"<\s*li[^>]*>", "- ", contenido, flags=re.IGNORECASE)
+    contenido = re.sub(r"<\s*/\s*li\s*>", "\n", contenido, flags=re.IGNORECASE)
+    contenido = re.sub(r"<\s*/\s*(ul|ol)\s*>", "\n", contenido, flags=re.IGNORECASE)
+    contenido = re.sub(r"<\s*(ul|ol)[^>]*>", "", contenido, flags=re.IGNORECASE)
+
+    # Eliminar cualquier otra etiqueta remanente.
+    contenido = re.sub(r"<[^>]+>", "", contenido)
+
+    # Decodificar entidades HTML y normalizar saltos.
+    contenido = html.unescape(contenido)
+    contenido = contenido.replace("\r\n", "\n").replace("\r", "\n")
+    contenido = re.sub(r"\n{3,}", "\n\n", contenido)
+
+    return contenido.strip()
+
+
+def _normalizar_contexto_para_word(valores_campos: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Devuelve una copia del contexto con valores HTML convertidos a texto imprimible.
+    ADEMAS: genera versiones RichText (rt_FIELDNAME) para TODOS los campos.
+    Permite usar {{r rt_fieldname}} en plantillas, con o sin HTML en el contenido.
+    """
+    normalizado: Dict[str, Any] = {}
+    for key, value in (valores_campos or {}).items():
+        normalizado[key] = _html_a_texto_word(value)
+
+        # Generar RichText automáticamente para TODOS los campos (string o no)
+        # Permite usar {{r rt_fieldname}} en plantillas
+        normalizado[f"rt_{key}"] = _html_a_richtext_word(value)
+    return normalizado
+
+
+def _html_a_richtext_word(valor: Any) -> Any:
+    """
+    Convierte HTML básico a RichText de docxtpl para uso con {{r rt_campo}}.
+    Fallback: si no hay HTML, devuelve RichText con texto plano.
+    """
+    if not isinstance(valor, str):
+        return valor
+
+    contenido = valor.strip()
+    rt = RichText()
+
+    if not contenido:
+        return rt
+
+    # Fallback para texto plano
+    if not re.search(r"<[^>]+>", contenido):
+        rt.add(contenido)
+        return rt
+
+    # Limpiar bloques no imprimibles
+    contenido = re.sub(r"<\s*script[^>]*>.*?<\s*/\s*script\s*>", "", contenido, flags=re.IGNORECASE | re.DOTALL)
+    contenido = re.sub(r"<\s*style[^>]*>.*?<\s*/\s*style\s*>", "", contenido, flags=re.IGNORECASE | re.DOTALL)
+
+    tokens = re.split(r"(<[^>]+>)", contenido)
+
+    bold_level = 0
+    italic_level = 0
+    underline_level = 0
+    list_stack = []
+    ol_counters = []
+
+    def _add_text(texto: str) -> None:
+        if not texto:
+            return
+        rt.add(
+            texto,
+            color="000000",
+            bold=bold_level > 0,
+            italic=italic_level > 0,
+            underline=underline_level > 0
+        )
+
+    for token in tokens:
+        if not token:
+            continue
+
+        if token.startswith("<") and token.endswith(">"):
+            tag = token[1:-1].strip().lower()
+            if not tag:
+                continue
+
+            is_end = tag.startswith("/")
+            tag_name = tag[1:].split()[0] if is_end else tag.split()[0]
+
+            if tag_name in ["strong", "b"]:
+                if is_end:
+                    bold_level = max(0, bold_level - 1)
+                else:
+                    bold_level += 1
+                continue
+
+            if tag_name in ["em", "i"]:
+                if is_end:
+                    italic_level = max(0, italic_level - 1)
+                else:
+                    italic_level += 1
+                continue
+
+            if tag_name == "u":
+                if is_end:
+                    underline_level = max(0, underline_level - 1)
+                else:
+                    underline_level += 1
+                continue
+
+            if tag_name == "br":
+                _add_text("\n")
+                continue
+
+            if tag_name in ["p", "div"] and is_end:
+                _add_text("\n")
+                continue
+
+            if tag_name == "ul":
+                if not is_end:
+                    list_stack.append("ul")
+                    ol_counters.append(0)
+                elif list_stack:
+                    list_stack.pop()
+                    ol_counters.pop()
+                continue
+
+            if tag_name == "ol":
+                if not is_end:
+                    list_stack.append("ol")
+                    ol_counters.append(0)
+                elif list_stack:
+                    list_stack.pop()
+                    ol_counters.pop()
+                continue
+
+            if tag_name == "li":
+                if not is_end:
+                    if list_stack and list_stack[-1] == "ol":
+                        ol_counters[-1] += 1
+                        _add_text(f"{ol_counters[-1]}. ")
+                    else:
+                        _add_text("- ")
+                else:
+                    _add_text("\n")
+                continue
+
+            # Etiquetas no soportadas: ignorar
+            continue
+
+        texto_plano = html.unescape(token)
+        texto_plano = texto_plano.replace("\r\n", "\n").replace("\r", "\n")
+        _add_text(texto_plano)
+
+    return rt
 
 
 def generar_word_desde_plantilla(
@@ -48,6 +231,8 @@ def generar_word_desde_plantilla(
         if not valores_campos:
             valores_campos = {}
         
+        # Convertir HTML enriquecido a texto compatible con docxtpl.
+        valores_campos = _normalizar_contexto_para_word(valores_campos)
         logger.info(f"Generando documento {documento_id} con context: {valores_campos}")
         
         # Cargar plantilla con docxtpl
@@ -148,7 +333,14 @@ def _reemplazar_en_runs(paragraph: Any, valores: Dict[str, Any]) -> None:
     replacements_made = {}
     for key, value in valores.items():
         placeholder = f"{{{{{key}}}}}"
-        replacement = "" if value is None else str(value)
+        # Solo reemplazar texto plano aquí. RichText/InlineImage deben ser
+        # procesados por docxtpl en render(), no por reemplazo manual.
+        if value is None:
+            replacement = ""
+        elif isinstance(value, (str, int, float, bool)):
+            replacement = str(value)
+        else:
+            continue
         if placeholder in combined:
             logger.info(f"DEBUG: Reemplazando '{placeholder}' con '{replacement}'")
             combined = combined.replace(placeholder, replacement)
@@ -156,10 +348,11 @@ def _reemplazar_en_runs(paragraph: Any, valores: Dict[str, Any]) -> None:
 
     if replacements_made:
         logger.info(f"DEBUG: Reemplazos realizados en párrafo: {replacements_made}")
-    
-    runs[0].text = combined
-    for r in runs[1:]:
-        r.text = ""
+        # Solo consolidar runs cuando realmente se reemplazó algo.
+        # Si no, mantener runs intactos para no perder formato existente.
+        runs[0].text = combined
+        for r in runs[1:]:
+            r.text = ""
 
 
 def _reemplazar_en_textboxes(container: Any, valores: Dict[str, Any]) -> None:
@@ -178,7 +371,12 @@ def _reemplazar_en_textboxes(container: Any, valores: Dict[str, Any]) -> None:
 
             for key, value in valores.items():
                 placeholder = f"{{{{{key}}}}}"
-                replacement = "" if value is None else str(value)
+                if value is None:
+                    replacement = ""
+                elif isinstance(value, (str, int, float, bool)):
+                    replacement = str(value)
+                else:
+                    continue
                 if placeholder in combined:
                     combined = combined.replace(placeholder, replacement)
 
@@ -277,7 +475,7 @@ def convertir_word_a_pdf(
         # Obtener ruta de LibreOffice
         libreoffice_path = _obtener_ruta_libreoffice()
         if not libreoffice_path:
-            logger.warning("LibreOffice no encontrado. PDF no será generado.")
+            logger.error("LibreOffice no está instalado o no fue encontrado en el sistema. Rutas buscadas: C:\\Program Files\\LibreOffice, /usr/bin/libreoffice, etc.")
             return None
         
         # Comando para convertir a PDF
@@ -290,11 +488,15 @@ def convertir_word_a_pdf(
             documento_word_path
         ]
         
+        logger.info(f"Ejecutando conversión a PDF con comando: {' '.join(cmd)}")
+        
         # Ejecutar conversión
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
         
         if result.returncode != 0:
-            logger.error(f"Error en conversión a PDF: {result.stderr}")
+            logger.error(f"Error en conversión a PDF. Código: {result.returncode}")
+            logger.error(f"STDOUT: {result.stdout}")
+            logger.error(f"STDERR: {result.stderr}")
             return None
         
         # Obtener nombre del PDF generado
@@ -315,7 +517,8 @@ def convertir_word_a_pdf(
             final_pdf_name = f"{documento_id}_final.pdf"
         
         final_pdf_path = DOCUMENTOS_DIR / final_pdf_name
-        pdf_path.rename(final_pdf_path)
+        # Usar shutil.move() que maneja archivos existentes correctamente (en Windows Path.rename() falla)
+        shutil.move(str(pdf_path), str(final_pdf_path))
         
         relative_path = f"/static/documentos/{final_pdf_name}"
         logger.info(f"PDF generado: {relative_path}")
@@ -339,13 +542,17 @@ def _obtener_ruta_libreoffice() -> Optional[str]:
     # Permitir sobreescribir la ruta por variable de entorno
     env_path = os.getenv("LIBREOFFICE_PATH")
     if env_path and os.path.exists(env_path):
+        logger.info(f"LibreOffice encontrado en variable LIBREOFFICE_PATH: {env_path}")
         return env_path
     
     if sys.platform == "win32":
-        # Rutas comunes en Windows
+        # Rutas comunes en Windows (agregadas más variantes)
         rutas_posibles = [
             r"C:\Program Files\LibreOffice\program\soffice.exe",
             r"C:\Program Files (x86)\LibreOffice\program\soffice.exe",
+            r"C:\LibreOffice\program\soffice.exe",
+            r"C:\Program Files\LibreOffice 7\program\soffice.exe",
+            r"C:\Program Files (x86)\LibreOffice 7\program\soffice.exe",
         ]
     elif sys.platform == "darwin":
         # macOS
@@ -356,25 +563,29 @@ def _obtener_ruta_libreoffice() -> Optional[str]:
         # Linux
         rutas_posibles = [
             "/usr/bin/libreoffice",
-            "/usr/bin/soffice"
+            "/usr/bin/soffice",
+            "/usr/local/bin/libreoffice"
         ]
     
     for ruta in rutas_posibles:
         if os.path.exists(ruta):
+            logger.info(f"LibreOffice encontrado en: {ruta}")
             return ruta
+    
+    logger.warning(f"LibreOffice no encontrado en rutas esperadas: {rutas_posibles}")
     
     # Intentar encontrar en PATH
     try:
-        result = subprocess.run(
-            ["which", "soffice"] if sys.platform != "win32" else ["where", "soffice.exe"],
-            capture_output=True,
-            text=True
-        )
+        cmd = ["which", "soffice"] if sys.platform != "win32" else ["where", "soffice.exe"]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
         if result.returncode == 0:
-            return result.stdout.strip()
-    except Exception:
-        pass
+            ruta_encontrada = result.stdout.strip()
+            logger.info(f"LibreOffice encontrado en PATH: {ruta_encontrada}")
+            return ruta_encontrada
+    except Exception as e:
+        logger.warning(f"No se pudo buscar LibreOffice en PATH: {e}")
     
+    logger.error("LibreOffice no está instalado o no fue encontrado en el sistema")
     return None
 
 

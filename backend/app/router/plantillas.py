@@ -382,6 +382,10 @@ def obtener_guia_placeholders(
                 "variables_simples": "{{ nombre_variable }}",
                 "ejemplo": "Resolución {{ consecutivo }} de fecha {{ fecha }}"
             },
+            "richtext_piloto": {
+                "sintaxis": "{{r rt_contenido }}",
+                "nota": "Piloto activo solo para el campo 'contenido'. Si no se usa, {{ contenido }} sigue funcionando en modo clásico."
+            },
             "condicionales": {
                 "sintaxis": "{% if condicion %}Texto si verdadero{% else %}Texto si falso{% endif %}",
                 "ejemplo": "{% if aprobado %}APROBADO{% else %}RECHAZADO{% endif %}"

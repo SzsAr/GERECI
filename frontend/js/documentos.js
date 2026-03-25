@@ -28,6 +28,93 @@ function esCampoAutomatico(nombreCampo) {
   return CAMPOS_AUTOMATICOS.has((nombreCampo || '').toString().trim().toLowerCase());
 }
 
+const TINYMCE_TOOLBAR = 'bold italic | bullist numlist | removeformat';
+
+function tinyMceDisponible() {
+  return typeof window !== 'undefined' && typeof window.tinymce !== 'undefined';
+}
+
+function asegurarTextareaId(textarea) {
+  if (textarea.id) return textarea.id;
+  const generatedId = `tiny-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  textarea.id = generatedId;
+  return generatedId;
+}
+
+function sincronizarTinyMce() {
+  if (!tinyMceDisponible()) return;
+  try {
+    window.tinymce.triggerSave();
+  } catch (err) {
+    console.warn('No se pudo sincronizar TinyMCE:', err);
+  }
+}
+
+function destruirTinyMceEnContenedor(container) {
+  if (!tinyMceDisponible() || !container) return;
+
+  const textareas = container.querySelectorAll('textarea');
+  textareas.forEach((textarea) => {
+    if (!textarea.id) return;
+    const editor = window.tinymce.get(textarea.id);
+    if (editor) {
+      editor.remove();
+    }
+  });
+}
+
+function inicializarTinyMceEnContenedor(container) {
+  if (!tinyMceDisponible() || !container) return;
+
+  const textareas = container.querySelectorAll('textarea');
+  textareas.forEach((textarea) => {
+    const textareaId = asegurarTextareaId(textarea);
+    if (window.tinymce.get(textareaId)) {
+      return;
+    }
+
+    window.tinymce.init({
+      target: textarea,
+      menubar: false,
+      branding: false,
+      statusbar: false,
+      plugins: 'lists',
+      toolbar: TINYMCE_TOOLBAR,
+      height: 220,
+      setup: (editor) => {
+        const sync = () => {
+          textarea.value = normalizarValorCampo(editor.getContent());
+        };
+
+        editor.on('init', sync);
+        editor.on('change input keyup undo redo', sync);
+      }
+    });
+  });
+}
+
+function normalizarValorCampo(rawValue) {
+  const value = (rawValue || '').toString().trim();
+  if (!value) return '';
+
+  const tmp = document.createElement('div');
+  tmp.innerHTML = value;
+  if (!tmp.textContent || !tmp.textContent.trim()) {
+    return '';
+  }
+
+  return value;
+}
+
+function obtenerLongitudTextoPlano(rawValue) {
+  const value = (rawValue || '').toString().trim();
+  if (!value) return 0;
+
+  const tmp = document.createElement('div');
+  tmp.innerHTML = value;
+  return (tmp.textContent || '').trim().length;
+}
+
 function initDocumentosPage() {
   modalNuevoDoc = new bootstrap.Modal(document.getElementById('modalNuevoDoc'));
   modalVerDoc = new bootstrap.Modal(document.getElementById('modalVerDoc'));
@@ -271,7 +358,9 @@ function bindDocumentoActions() {
 function abrirModalNuevoDoc() {
   document.getElementById('form-nuevo-doc').reset();
   document.getElementById('nuevo-doc-error').classList.add('d-none');
-  document.getElementById('nuevo-campos-container').innerHTML = '';
+  const containerCampos = document.getElementById('nuevo-campos-container');
+  destruirTinyMceEnContenedor(containerCampos);
+  containerCampos.innerHTML = '';
   document.getElementById('tipo-documento-info').classList.add('d-none');
   document.getElementById('campos-section').style.display = 'none';
   document.getElementById('modalNuevoDocTitle').textContent = 'Nuevo documento';
@@ -283,6 +372,8 @@ async function cargarCamposPlantilla() {
   const tipoInfo = document.getElementById('tipo-documento-info');
   const camposSection = document.getElementById('campos-section');
   const container = document.getElementById('nuevo-campos-container');
+
+  destruirTinyMceEnContenedor(container);
   
   if (!plantillaId) {
     tipoInfo.classList.add('d-none');
@@ -323,6 +414,9 @@ async function cargarCamposPlantilla() {
       }
 
       camposSection.style.display = camposRenderizados > 0 ? 'block' : 'none';
+      if (camposRenderizados > 0) {
+        inicializarTinyMceEnContenedor(container);
+      }
     } else {
       camposSection.style.display = 'none';
     }
@@ -339,7 +433,12 @@ function agregarCampoInput(containerId, key = '', descripcion = '') {
   campoDiv.id = campoId;
   campoDiv.innerHTML = `
     <label class="form-label">${key} ${descripcion ? '<small class="text-muted">(' + descripcion + ')</small>' : ''}</label>
-    <input type="text" class="form-control campo-valor" data-campo-nombre="${key}" placeholder="Ingrese ${key}">
+    <textarea
+      class="form-control campo-valor"
+      data-campo-nombre="${key}"
+      rows="5"
+      placeholder="Ingrese ${key}"
+    ></textarea>
   `;
   container.appendChild(campoDiv);
 }
@@ -354,10 +453,11 @@ function limpiarCamposContainer(containerId) {
 }
 
 function getCamposAsJSON(containerId) {
+  sincronizarTinyMce();
   const campos = {};
   document.querySelectorAll(`#${containerId} .campo-valor`).forEach(input => {
     const nombre = input.getAttribute('data-campo-nombre');
-    const valor = input.value.trim();
+    const valor = normalizarValorCampo(input.value);
     if (nombre && !esCampoAutomatico(nombre)) campos[nombre] = valor;
   });
   return Object.keys(campos).length > 0 ? campos : null;
@@ -752,6 +852,12 @@ async function devolverDocumento() {
     alert('Ingrese observaciones para devolver el documento');
     return;
   }
+
+  const longitudTexto = obtenerLongitudTextoPlano(observaciones);
+  if (longitudTexto < 10) {
+    alert('La observacion debe tener al menos 10 caracteres');
+    return;
+  }
   
   try {
     const transiciones = await api.request(`/documentos/${documentoActual.id}/transiciones`);
@@ -778,6 +884,8 @@ async function cargarCamposParaEditar(documento) {
   try {
     const sectionEditar = document.getElementById('section-editar-campos');
     const container = document.getElementById('ver-campos-container');
+
+    destruirTinyMceEnContenedor(container);
     
     // Obtener campos de la plantilla
     const plantilla = await api.request(`/plantillas/${documento.id_plantilla}`);
@@ -788,8 +896,8 @@ async function cargarCamposParaEditar(documento) {
       return;
     }
     
-    // Construir formulario con los campos
-    let html = '<div class="row g-3">';
+    // Construir formulario con bloques verticales para mejorar legibilidad en modal
+    let html = '<div class="campos-editables-stack">';
     
     // Iterar sobre los campos (campos_json es un objeto {'nombre_campo': 'tipo_dato'})
     let camposEditables = 0;
@@ -803,22 +911,21 @@ async function cargarCamposParaEditar(documento) {
         : '';
       
       let inputHtml = '';
-      const tipoUpper = tipo_dato.toUpperCase();
+      const tipoUpper = (tipo_dato || '').toString().toUpperCase();
       
       // Generar input según tipo de dato
       if (tipoUpper === 'TEXT') {
         inputHtml = `<textarea 
             class="form-control form-control-sm campo-editable" 
             name="${nombre_campo}" 
-            rows="3"
+            rows="5"
           >${valor}</textarea>`;
       } else if (tipoUpper === 'VARCHAR') {
-        inputHtml = `<input 
-            type="text" 
+        inputHtml = `<textarea 
             class="form-control form-control-sm campo-editable" 
             name="${nombre_campo}" 
-            value="${valor}"
-          />`;
+            rows="5"
+          >${valor}</textarea>`;
       } else if (tipoUpper === 'INT' || tipoUpper === 'DECIMAL' || tipoUpper === 'FLOAT') {
         inputHtml = `<input 
             type="number" 
@@ -842,16 +949,15 @@ async function cargarCamposParaEditar(documento) {
             value="${valor}"
           />`;
       } else {
-        inputHtml = `<input 
-            type="text" 
-            class="form-control form-control-sm campo-editable" 
+        inputHtml = `<textarea 
+          class="form-control form-control-sm campo-editable" 
             name="${nombre_campo}" 
-            value="${valor}"
-          />`;
+            rows="5"
+          >${valor}</textarea>`;
       }
-      
+
       html += `
-        <div class="col-md-6">
+        <div class="campo-edit-item">
           <label class="form-label small fw-semibold">
             ${nombre_campo}
             <small class="text-muted">(${tipo_dato})</small>
@@ -872,6 +978,7 @@ async function cargarCamposParaEditar(documento) {
     html += '</div>';
     container.innerHTML = html;
     sectionEditar.classList.remove('d-none');
+    inicializarTinyMceEnContenedor(container);
     
   } catch (err) {
     console.error('Error al cargar campos:', err);
@@ -915,13 +1022,15 @@ async function cargarObservacionesDocumento(documento) {
 async function guardarCamposDocumento() {
   try {
     if (!documentoActual) return;
+
+    sincronizarTinyMce();
     
     // Recopilar valores de los campos
     const campos = document.querySelectorAll('.campo-editable');
     const valores_campos = {};
     
     campos.forEach(campo => {
-      valores_campos[campo.name] = campo.value;
+      valores_campos[campo.name] = normalizarValorCampo(campo.value);
     });
     
     console.log('Guardando valores_campos:', valores_campos);
