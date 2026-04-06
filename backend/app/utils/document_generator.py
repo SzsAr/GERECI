@@ -18,6 +18,9 @@ from io import BytesIO
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_RICHTEXT_FONT = "Arial"
+DEFAULT_RICHTEXT_SIZE = 24  # Word usa medio punto: 24 = 12pt
+
 # Rutas base para documentos
 MEDIA_DIR = Path(__file__).parent.parent.parent / "media"
 DOCUMENTOS_DIR = MEDIA_DIR / "documentos"
@@ -102,7 +105,7 @@ def _html_a_richtext_word(valor: Any) -> Any:
 
     # Fallback para texto plano
     if not re.search(r"<[^>]+>", contenido):
-        rt.add(contenido)
+        rt.add(contenido, font=DEFAULT_RICHTEXT_FONT, size=DEFAULT_RICHTEXT_SIZE, color="000000")
         return rt
 
     # Limpiar bloques no imprimibles
@@ -122,6 +125,8 @@ def _html_a_richtext_word(valor: Any) -> Any:
             return
         rt.add(
             texto,
+            font=DEFAULT_RICHTEXT_FONT,
+            size=DEFAULT_RICHTEXT_SIZE,
             color="000000",
             bold=bold_level > 0,
             italic=italic_level > 0,

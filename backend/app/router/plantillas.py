@@ -398,7 +398,8 @@ def obtener_guia_placeholders(
                 "consecutivo": "Número consecutivo del documento (asignado al finalizar)",
                 "fecha": "Fecha de emisión del documento",
                 "fecha_emision": "Fecha de emisión (formato completo)",
-                "asunto": "Asunto del documento",
+                "asunto": "Asunto en contexto (si existe campo personalizado 'asunto' se respeta; si no, usa el asunto del documento)",
+                "asunto_documento": "Asunto con el que se creó el documento (metadato del sistema)",
                 "usuario_nombre": "Nombre del usuario que crea el documento",
                 "tipo_documento": "Tipo de documento (Resolución, Circular, etc)",
                 "plantilla_nombre": "Nombre de la plantilla"

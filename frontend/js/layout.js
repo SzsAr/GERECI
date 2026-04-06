@@ -78,3 +78,119 @@ const layout = (function() {
 
   return { renderNavbar, renderSidebar, renderFooter };
 })();
+
+(function initUiHelpers() {
+  // Paleta de colores amable alineada con custom.css
+  const colorPalette = {
+    primary: '#0d6efd',    // Azul
+    success: '#198754',    // Verde
+    warning: '#fd7e14',    // Naranja
+    error: '#dc3545',      // Rojo
+    info: '#17a2b8'        // Cyan
+  };
+
+  function hasSweetAlert() {
+    return typeof window !== 'undefined' && typeof window.Swal !== 'undefined';
+  }
+
+  function getColorByIcon(icon) {
+    const colorMap = {
+      'success': colorPalette.success,
+      'error': colorPalette.error,
+      'warning': colorPalette.warning,
+      'info': colorPalette.info,
+      'question': colorPalette.primary
+    };
+    return colorMap[icon] || colorPalette.primary;
+  }
+
+  async function notify(icon, title, text) {
+    if (hasSweetAlert()) {
+      const confirmColor = getColorByIcon(icon);
+      await window.Swal.fire({
+        icon,
+        title,
+        text,
+        confirmButtonText: 'Aceptar',
+        confirmButtonColor: confirmColor,
+        customClass: {
+          popup: 'swal2-rounded',
+          title: 'swal2-title-friendly',
+          content: 'swal2-content-friendly'
+        }
+      });
+      return;
+    }
+
+    window.alert(text || title || '');
+  }
+
+  async function confirmDialog(text, title = 'Confirmacion') {
+    if (hasSweetAlert()) {
+      const result = await window.Swal.fire({
+        icon: 'question',
+        title,
+        text,
+        showCancelButton: true,
+        confirmButtonText: 'Si, continuar',
+        cancelButtonText: 'Cancelar',
+        confirmButtonColor: colorPalette.primary,
+        cancelButtonColor: '#6c757d',
+        customClass: {
+          popup: 'swal2-rounded',
+          title: 'swal2-title-friendly',
+          content: 'swal2-content-friendly'
+        }
+      });
+      return Boolean(result.isConfirmed);
+    }
+
+    return window.confirm(text || title);
+  }
+
+  // Inyectar estilos CSS para SweetAlert amable
+  function injectSweetAlertStyles() {
+    const style = document.createElement('style');
+    style.textContent = `
+      .swal2-rounded {
+        border-radius: 12px !important;
+      }
+      .swal2-title-friendly {
+        font-weight: 600 !important;
+        color: #212529 !important;
+      }
+      .swal2-content-friendly {
+        color: #6c757d !important;
+      }
+      .swal2-confirm {
+        border-radius: 6px !important;
+        font-weight: 500 !important;
+        padding: 0.6rem 1.5rem !important;
+      }
+      .swal2-cancel {
+        border-radius: 6px !important;
+        font-weight: 500 !important;
+        padding: 0.6rem 1.5rem !important;
+      }
+      .swal2-icon {
+        border-radius: 50% !important;
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  // Inyectar estilos al cargar
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', injectSweetAlertStyles);
+  } else {
+    injectSweetAlertStyles();
+  }
+
+  window.ui = {
+    confirm: confirmDialog,
+    info: async (text, title = 'Informacion') => notify('info', title, text),
+    success: async (text, title = 'Exito') => notify('success', title, text),
+    warning: async (text, title = 'Atencion') => notify('warning', title, text),
+    error: async (text, title = 'Error') => notify('error', title, text)
+  };
+})();

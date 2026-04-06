@@ -7,6 +7,10 @@ let modalNuevoDoc, modalVerDoc;
 let documentoActual = null;
 let plantillasData = []; // Almacenar datos completos de plantillas
 let documentosCache = []; // Almacenar documentos para filtrado local
+let documentosFiltrados = []; // Documentos después de filtrar
+let paginaActual = 1; // Página actual
+const REGISTROS_POR_PAGINA = 10; // 10 registros por página
+const ui = window.ui;
 
 const CAMPOS_AUTOMATICOS = new Set([
   'consecutivo',
@@ -80,6 +84,7 @@ function inicializarTinyMceEnContenedor(container) {
       statusbar: false,
       plugins: 'lists',
       toolbar: TINYMCE_TOOLBAR,
+      content_style: 'body { font-family: Arial, sans-serif; font-size: 12pt; }',
       height: 220,
       setup: (editor) => {
         const sync = () => {
@@ -127,9 +132,27 @@ function initDocumentosPage() {
   document.getElementById('btn-nuevo-doc').addEventListener('click', () => {
     abrirModalNuevoDoc();
   });
+
+  document.getElementById('btn-limpiar-filtros').addEventListener('click', () => {
+    limpiarFiltrosDocumentos();
+  });
   
   // Filtrado en tiempo real por asunto
   document.getElementById('filtro-asunto').addEventListener('input', () => {
+    filtrarDocumentosLocal();
+  });
+
+  // Filtrado por tipo de documento
+  document.getElementById('filtro-tipo').addEventListener('change', () => {
+    filtrarDocumentosLocal();
+  });
+
+  // Filtrado por rango de fechas de creación
+  document.getElementById('filtro-fecha-desde').addEventListener('change', () => {
+    filtrarDocumentosLocal();
+  });
+
+  document.getElementById('filtro-fecha-hasta').addEventListener('change', () => {
     filtrarDocumentosLocal();
   });
   
@@ -185,7 +208,7 @@ function initDocumentosPage() {
 
 async function generarPdfFinal() {
   if (!documentoActual || !documentoActual.id) return;
-  if (!confirm('¿Generar PDF final del documento?')) return;
+  if (!(await ui.confirm('¿Generar PDF final del documento?'))) return;
 
   try {
     const resp = await api.request(`/documentos/${documentoActual.id}/generar-pdf`, {
@@ -196,15 +219,15 @@ async function generarPdfFinal() {
     documentoActual = await api.request(`/documentos/${documentoActual.id}`);
 
     if (documentoActual.ruta_pdf_final) {
-      alert('PDF final generado correctamente');
+      await ui.success('PDF final generado correctamente');
     } else {
-      alert('PDF solicitado, pero aún no se generó. Intente de nuevo.');
+      await ui.warning('PDF solicitado, pero aún no se generó. Intente de nuevo.');
     }
 
     modalVerDoc.hide();
     cargarDocumentos();
   } catch (err) {
-    alert(`Error al generar PDF: ${err.message}`);
+    await ui.error(`Error al generar PDF: ${err.message}`);
   }
 }
 
@@ -253,7 +276,6 @@ async function cargarTiposYPlantillas() {
 
 async function cargarDocumentos() {
   const estado = document.getElementById('filtro-estado').value;
-  document.getElementById('filtro-asunto').value = ''; // Limpiar búsqueda de asunto
   const tbody = document.querySelector('#tabla-documentos');
   
   tbody.innerHTML = '<tr><td colspan="8" class="text-muted text-center py-3">Cargando...</td></tr>';
@@ -269,19 +291,68 @@ async function cargarDocumentos() {
     
     // Almacenar en cache para filtrado local
     documentosCache = docs || [];
-    
-    renderizarDocumentos(documentosCache);
-    bindDocumentoActions();
+
+    poblarFiltroTipo(documentosCache);
+    filtrarDocumentosLocal();
   } catch (err) {
     const tbody = document.querySelector('#tabla-documentos');
     tbody.innerHTML = `<tr><td colspan="8" class="text-center py-4"><div class="alert alert-danger mb-0"><i class="bi bi-exclamation-triangle"></i> Error al cargar documentos: ${err.message}</div></td></tr>`;
   }
 }
 
-// Renderizar documentos en la tabla
+function limpiarFiltrosDocumentos() {
+  document.getElementById('filtro-estado').value = '';
+  document.getElementById('filtro-tipo').value = '';
+  document.getElementById('filtro-fecha-desde').value = '';
+  document.getElementById('filtro-fecha-hasta').value = '';
+  document.getElementById('filtro-asunto').value = '';
+  paginaActual = 1; // Resetear a página 1
+  cargarDocumentos();
+}
+
+function poblarFiltroTipo(docs) {
+  const select = document.getElementById('filtro-tipo');
+  if (!select) return;
+
+  const valorActual = select.value;
+  const tiposUnicos = Array.from(new Set(
+    (docs || [])
+      .map(d => (d.tipo_nombre || '').toString().trim())
+      .filter(Boolean)
+  )).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
+
+  select.innerHTML = '<option value="">Todos los tipos</option>' +
+    tiposUnicos.map(tipo => `<option value="${tipo}">${tipo}</option>`).join('');
+
+  if (valorActual && tiposUnicos.includes(valorActual)) {
+    select.value = valorActual;
+  }
+}
+
+// Renderizar documentos en la tabla con paginación
 function renderizarDocumentos(docs) {
   const tbody = document.querySelector('#tabla-documentos');
+  documentosFiltrados = docs || []; // Guardar documentos filtrados
+  paginaActual = 1; // Resetear a página 1 cuando se cambian filtros
   
+  if (!docs || docs.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="8" class="text-center py-4"><div class="alert alert-info mb-0"><i class="bi bi-info-circle"></i> No hay documentos para mostrar. Crea uno nuevo con el botón <strong>Nuevo</strong></div></td></tr>';
+    renderizarPaginacion(0);
+    return;
+  }
+  
+  // Calcular índices para la página actual
+  const inicio = (paginaActual - 1) * REGISTROS_POR_PAGINA;
+  const fin = inicio + REGISTROS_POR_PAGINA;
+  const documentosPagina = docs.slice(inicio, fin);
+  
+  // Renderizar solo los documentos de esta página
+  renderizarFilasDocumentos(documentosPagina, tbody);
+  renderizarPaginacion(docs.length);
+}
+
+// Renderizar solo las filas de documentos (sin paginación)
+function renderizarFilasDocumentos(docs, tbody) {
   if (!docs || docs.length === 0) {
     tbody.innerHTML = '<tr><td colspan="8" class="text-center py-4"><div class="alert alert-info mb-0"><i class="bi bi-info-circle"></i> No hay documentos para mostrar. Crea uno nuevo con el botón <strong>Nuevo</strong></div></td></tr>';
     return;
@@ -317,23 +388,129 @@ function renderizarDocumentos(docs) {
   }).join('');
 }
 
+// Renderizar controles de paginación
+function renderizarPaginacion(totalDocumentos) {
+  const paginacionControl = document.getElementById('paginacion-controles');
+  const paginacionInfo = document.getElementById('paginacion-info');
+  
+  if (!paginacionControl) return;
+  
+  if (totalDocumentos === 0) {
+    paginacionControl.innerHTML = '';
+    paginacionInfo.textContent = '';
+    return;
+  }
+  
+  const totalPaginas = Math.ceil(totalDocumentos / REGISTROS_POR_PAGINA);
+  const inicio = (paginaActual - 1) * REGISTROS_POR_PAGINA + 1;
+  const fin = Math.min(paginaActual * REGISTROS_POR_PAGINA, totalDocumentos);
+  
+  paginacionInfo.textContent = `Mostrando ${inicio}-${fin} de ${totalDocumentos} documentos`;
+  
+  let html = '';
+  
+  // Botón anterior
+  if (paginaActual > 1) {
+    html += `<li class="page-item"><button class="page-link" data-pagina="${paginaActual - 1}" title="Página anterior"><i class="bi bi-chevron-left"></i></button></li>`;
+  } else {
+    html += '<li class="page-item disabled"><span class="page-link"><i class="bi bi-chevron-left"></i></span></li>';
+  }
+  
+  // Números de página (máximo 5 botones visibles)
+  let paginaInicio = Math.max(1, paginaActual - 2);
+  let paginaFin = Math.min(totalPaginas, paginaActual + 2);
+  
+  if (paginaInicio > 1) {
+    html += '<li class="page-item"><button class="page-link" data-pagina="1">1</button></li>';
+    if (paginaInicio > 2) html += '<li class="page-item disabled"><span class="page-link">...</span></li>';
+  }
+  
+  for (let i = paginaInicio; i <= paginaFin; i++) {
+    if (i === paginaActual) {
+      html += `<li class="page-item active"><span class="page-link">${i}</span></li>`;
+    } else {
+      html += `<li class="page-item"><button class="page-link" data-pagina="${i}">${i}</button></li>`;
+    }
+  }
+  
+  if (paginaFin < totalPaginas) {
+    if (paginaFin < totalPaginas - 1) html += '<li class="page-item disabled"><span class="page-link">...</span></li>';
+    html += `<li class="page-item"><button class="page-link" data-pagina="${totalPaginas}">${totalPaginas}</button></li>`;
+  }
+  
+  // Botón siguiente
+  if (paginaActual < totalPaginas) {
+    html += `<li class="page-item"><button class="page-link" data-pagina="${paginaActual + 1}" title="Página siguiente"><i class="bi bi-chevron-right"></i></button></li>`;
+  } else {
+    html += '<li class="page-item disabled"><span class="page-link"><i class="bi bi-chevron-right"></i></span></li>';
+  }
+  
+  paginacionControl.innerHTML = html;
+  
+  // Vincular botones de paginación
+  document.querySelectorAll('#paginacion-controles button[data-pagina]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      paginaActual = parseInt(btn.dataset.pagina);
+      const tbody = document.querySelector('#tabla-documentos');
+      
+      // Calcular índices para la página actual
+      const inicio = (paginaActual - 1) * REGISTROS_POR_PAGINA;
+      const fin = inicio + REGISTROS_POR_PAGINA;
+      const documentosPagina = documentosFiltrados.slice(inicio, fin);
+      
+      renderizarFilasDocumentos(documentosPagina, tbody);
+      renderizarPaginacion(documentosFiltrados.length);
+      bindDocumentoActions(); // Vincular botones de documentos después de cambiar página
+      tbody.closest('.card').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
+  });
+}
+
 // Filtrado local en tiempo real por asunto
 function filtrarDocumentosLocal() {
   const asunto = document.getElementById('filtro-asunto').value.trim().toLowerCase();
-  
-  if (!asunto) {
-    renderizarDocumentos(documentosCache);
-  } else {
-    const filtrados = documentosCache.filter(d => 
-      d.asunto.toLowerCase().includes(asunto)
-    );
-    renderizarDocumentos(filtrados);
-  }
-  
-  bindDocumentoActions();
+  const tipo = document.getElementById('filtro-tipo').value;
+  const fechaDesde = document.getElementById('filtro-fecha-desde').value;
+  const fechaHasta = document.getElementById('filtro-fecha-hasta').value;
+
+  const desdeDate = fechaDesde ? new Date(`${fechaDesde}T00:00:00`) : null;
+  const hastaDate = fechaHasta ? new Date(`${fechaHasta}T23:59:59.999`) : null;
+
+  const filtrados = (documentosCache || []).filter(d => {
+    const asuntoDoc = (d.asunto || '').toString().toLowerCase();
+    if (asunto && !asuntoDoc.includes(asunto)) return false;
+
+    const tipoDoc = (d.tipo_nombre || '').toString().trim();
+    if (tipo && tipoDoc !== tipo) return false;
+
+    if (desdeDate || hastaDate) {
+      if (!d.fecha_creacion) return false;
+      const fechaCreacion = new Date(d.fecha_creacion);
+      if (Number.isNaN(fechaCreacion.getTime())) return false;
+      if (desdeDate && fechaCreacion < desdeDate) return false;
+      if (hastaDate && fechaCreacion > hastaDate) return false;
+    }
+
+    return true;
+  });
+
+  paginaActual = 1; // Resetear a página 1 cuando se aplica filtro
+  renderizarDocumentos(filtrados);
+  bindDocumentoActions(); // Vincular acciones de documentos después de renderizar
 }
 
 function bindDocumentoActions() {
+  // Remover listeners previos para evitar acumulamiento
+  document.querySelectorAll('[data-ver-doc]').forEach(btn => {
+    const newBtn = btn.cloneNode(true);
+    btn.parentNode.replaceChild(newBtn, btn);
+  });
+  document.querySelectorAll('[data-eliminar-doc]').forEach(btn => {
+    const newBtn = btn.cloneNode(true);
+    btn.parentNode.replaceChild(newBtn, btn);
+  });
+  
+  // Vincular listen listeners nuevos
   document.querySelectorAll('[data-ver-doc]').forEach(btn => {
     btn.addEventListener('click', () => {
       const docId = btn.dataset.verDoc;
@@ -343,13 +520,14 @@ function bindDocumentoActions() {
   
   document.querySelectorAll('[data-eliminar-doc]').forEach(btn => {
     btn.addEventListener('click', async () => {
-      if (!confirm('¿Eliminar documento?')) return;
+      if (!(await ui.confirm('¿Eliminar documento?'))) return;
       const docId = btn.dataset.eliminarDoc;
       try {
         await api.request(`/documentos/${docId}`, { method: 'DELETE' });
+        await ui.success('Documento eliminado correctamente');
         cargarDocumentos();
       } catch (err) {
-        alert(`Error: ${err.message}`);
+        await ui.error(`Error: ${err.message}`);
       }
     });
   });
@@ -624,7 +802,7 @@ async function verDocumento(docId) {
     document.getElementById('modalVerDocTitle').textContent = `Documento #${documentoActual.id}`;
     modalVerDoc.show();
   } catch (err) {
-    alert(`Error al cargar documento: ${err.message}`);
+    await ui.error(`Error al cargar documento: ${err.message}`);
   }
 }
 
@@ -735,7 +913,7 @@ async function firmarDocumento() {
     
     const respuesta = await api.request(`/documentos/${documentoActual.id}/firmar`, { method: 'POST', body: formData });
     
-    alert(`Documento ${respuesta.nuevo_estado === 'FINALIZADO' ? 'finalizado' : 'actualizado'} correctamente`);
+    await ui.success(`Documento ${respuesta.nuevo_estado === 'FINALIZADO' ? 'finalizado' : 'actualizado'} correctamente`);
     
     modalVerDoc.hide();
     cargarDocumentos();
@@ -752,7 +930,7 @@ function mostrarSectionFirma() {
 }
 
 async function enviarARevision() {
-  if (!confirm('¿Enviar documento a revisión?')) return;
+  if (!(await ui.confirm('¿Enviar documento a revisión?'))) return;
   
   try {
     const transiciones = await api.request(`/documentos/${documentoActual.id}/transiciones`);
@@ -767,16 +945,16 @@ async function enviarARevision() {
       body: { nuevo_estado: siguienteEstado, descripcion_cambio: 'Enviado a revisión' }
     });
     
-    alert(`Documento enviado a ${siguienteEstado.replace(/_/g, ' ')}`);
+    await ui.success(`Documento enviado a ${siguienteEstado.replace(/_/g, ' ')}`);
     modalVerDoc.hide();
     cargarDocumentos();
   } catch (err) {
-    alert(`Error: ${err.message}`);
+    await ui.error(`Error: ${err.message}`);
   }
 }
 
 async function aprobarDocumento() {
-  if (!confirm('¿Aprobar este documento?')) return;
+  if (!(await ui.confirm('¿Aprobar este documento?'))) return;
   
   try {
     const transiciones = await api.request(`/documentos/${documentoActual.id}/transiciones`);
@@ -795,11 +973,11 @@ async function aprobarDocumento() {
     const docActualizado = await api.request(`/documentos/${documentoActual.id}`);
     documentoActual = docActualizado;
     
-    alert(`Documento aprobado. Estado actual: ${documentoActual.estado.replace(/_/g, ' ')}`);
+    await ui.success(`Documento aprobado. Estado actual: ${documentoActual.estado.replace(/_/g, ' ')}`);
     modalVerDoc.hide();
     cargarDocumentos();
   } catch (err) {
-    alert(`Error: ${err.message}`);
+    await ui.error(`Error: ${err.message}`);
   }
 }
 
@@ -807,7 +985,7 @@ async function confirmarFirma() {
   const inputFirma = document.getElementById('input-firma');
   
   if (!inputFirma.files || inputFirma.files.length === 0) {
-    alert('Seleccione una imagen de firma');
+    await ui.warning('Seleccione una imagen de firma');
     return;
   }
   
@@ -821,16 +999,16 @@ async function confirmarFirma() {
       body: formData
     });
     
-    alert('Documento firmado correctamente');
+    await ui.success('Documento firmado correctamente');
     modalVerDoc.hide();
     cargarDocumentos();
   } catch (err) {
-    alert(`Error al firmar: ${err.message}`);
+    await ui.error(`Error al firmar: ${err.message}`);
   }
 }
 
 async function finalizarDocumento() {
-  if (!confirm('¿Finalizar documento? Se asignará consecutivo y generará PDF final')) return;
+  if (!(await ui.confirm('¿Finalizar documento? Se asignará consecutivo y generará PDF final'))) return;
   
   try {
     await api.request(`/documentos/${documentoActual.id}/estado`, {
@@ -838,24 +1016,24 @@ async function finalizarDocumento() {
       body: { nuevo_estado: 'FINALIZADO', descripcion_cambio: 'Documento finalizado' }
     });
     
-    alert('Documento finalizado. Se ha asignado consecutivo y generado PDF');
+    await ui.success('Documento finalizado. Se ha asignado consecutivo y generado PDF');
     modalVerDoc.hide();
     cargarDocumentos();
   } catch (err) {
-    alert(`Error: ${err.message}`);
+    await ui.error(`Error: ${err.message}`);
   }
 }
 
 async function devolverDocumento() {
   const observaciones = document.getElementById('textarea-observaciones').value.trim();
   if (!observaciones) {
-    alert('Ingrese observaciones para devolver el documento');
+    await ui.warning('Ingrese observaciones para devolver el documento');
     return;
   }
 
   const longitudTexto = obtenerLongitudTextoPlano(observaciones);
   if (longitudTexto < 10) {
-    alert('La observacion debe tener al menos 10 caracteres');
+    await ui.warning('La observacion debe tener al menos 10 caracteres');
     return;
   }
   
@@ -872,11 +1050,11 @@ async function devolverDocumento() {
       body: { nuevo_estado: estadoDevolucion, descripcion_cambio: observaciones }
     });
     
-    alert('Documento devuelto con observaciones');
+    await ui.success('Documento devuelto con observaciones');
     modalVerDoc.hide();
     cargarDocumentos();
   } catch (err) {
-    alert(`Error: ${err.message}`);
+    await ui.error(`Error: ${err.message}`);
   }
 }
 
@@ -982,7 +1160,7 @@ async function cargarCamposParaEditar(documento) {
     
   } catch (err) {
     console.error('Error al cargar campos:', err);
-    alert('Error al cargar campos editables');
+    await ui.error('Error al cargar campos editables');
   }
 }
 
@@ -1037,7 +1215,7 @@ async function guardarCamposDocumento() {
     
     // Validar que hay campos
     if (Object.keys(valores_campos).length === 0) {
-      alert('No hay campos para actualizar');
+      await ui.warning('No hay campos para actualizar');
       return;
     }
     
@@ -1048,7 +1226,7 @@ async function guardarCamposDocumento() {
     });
     
     console.log('Respuesta actualización:', response);
-    alert('Campos actualizados correctamente');
+    await ui.success('Campos actualizados correctamente');
     
     // Regenerar Word con nuevos datos
     try {
@@ -1062,7 +1240,7 @@ async function guardarCamposDocumento() {
     
   } catch (err) {
     console.error('Error completo:', err);
-    alert(`Error al guardar campos: ${err.message}`);
+    await ui.error(`Error al guardar campos: ${err.message}`);
   }
 }
 

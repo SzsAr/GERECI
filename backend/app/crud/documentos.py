@@ -510,7 +510,13 @@ def generar_context_para_plantilla(db: Session, documento_id: int, usuario_id: O
         
         # Agregar metadatos del sistema
         context['consecutivo'] = doc.get('consecutivo') or ''
-        context['asunto'] = doc.get('asunto', '')
+        context['asunto_documento'] = doc.get('asunto', '')
+
+        # Evitar colision con campos personalizados de plantilla llamados "asunto".
+        # Si la plantilla define {{ asunto }}, se respeta ese valor;
+        # de lo contrario, se usa el asunto del documento para compatibilidad.
+        if 'asunto' not in context:
+            context['asunto'] = context['asunto_documento']
         
         # Fecha de emisión (si ya está finalizado)
         if doc.get('fecha_emision'):
@@ -601,7 +607,13 @@ def generar_context_con_firmas(db: Session, documento_id: int) -> dict:
         
         # Agregar metadatos del sistema
         context['consecutivo'] = doc.get('consecutivo') or ''
-        context['asunto'] = doc.get('asunto', '')
+        context['asunto_documento'] = doc.get('asunto', '')
+
+        # Evitar colision con campos personalizados de plantilla llamados "asunto".
+        # Si la plantilla define {{ asunto }}, se respeta ese valor;
+        # de lo contrario, se usa el asunto del documento para compatibilidad.
+        if 'asunto' not in context:
+            context['asunto'] = context['asunto_documento']
         
         # Fecha de emisión
         if doc.get('fecha_emision'):

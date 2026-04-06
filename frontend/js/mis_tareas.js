@@ -9,6 +9,7 @@ let modalVerDoc;
 let documentoActual = null;
 let usuarioActual = null;
 let tareasPendientesCache = [];
+const ui = window.ui;
 
 const FILTROS_STORAGE_KEY = 'mis_tareas_filtros_v1';
 const ACCIONES_REVISION = new Set([
@@ -86,6 +87,7 @@ function inicializarTinyMceEnContenedor(container) {
       statusbar: false,
       plugins: 'lists',
       toolbar: TINYMCE_TOOLBAR,
+      content_style: 'body { font-family: Arial, sans-serif; font-size: 12pt; }',
       height: 220,
       setup: (editor) => {
         const sync = () => {
@@ -210,7 +212,7 @@ function setButtonLoading(button, isLoading, loadingText = 'Procesando') {
 function showToast(message, variant = 'info', title = '') {
   const container = document.getElementById('toast-container');
   if (!container || !window.bootstrap || !bootstrap.Toast) {
-    alert(message);
+    ui.info(message, title || 'Mensaje');
     return;
   }
 
@@ -593,7 +595,7 @@ async function ejecutarAccionRapida(docId, quickAction, triggerButton = null) {
     FINALIZAR: '¿Finalizar este documento ahora?'
   };
 
-  if (!confirm(mensajesConfirmacion[quickAction] || '¿Ejecutar esta acción rápida?')) return;
+  if (!(await ui.confirm(mensajesConfirmacion[quickAction] || '¿Ejecutar esta acción rápida?'))) return;
 
   setButtonLoading(triggerButton, true, 'Aplicando');
 
@@ -641,7 +643,7 @@ async function ejecutarAccionRapida(docId, quickAction, triggerButton = null) {
 
 async function generarPdfFinal(triggerButton = null) {
   if (!documentoActual || !documentoActual.id) return;
-  if (!confirm('¿Generar PDF final del documento?')) return;
+  if (!(await ui.confirm('¿Generar PDF final del documento?'))) return;
 
   setButtonLoading(triggerButton, true, 'Generando');
 
@@ -862,7 +864,7 @@ function mostrarSectionObservaciones() {
 
 async function enviarARevision(triggerButton = null) {
   if (!documentoActual) return;
-  if (!confirm('¿Enviar documento a revisión?')) return;
+  if (!(await ui.confirm('¿Enviar documento a revisión?'))) return;
 
   setButtonLoading(triggerButton, true, 'Enviando');
 
@@ -891,7 +893,7 @@ async function enviarARevision(triggerButton = null) {
 
 async function aprobarDocumento(triggerButton = null) {
   if (!documentoActual) return;
-  if (!confirm('¿Aprobar este documento?')) return;
+  if (!(await ui.confirm('¿Aprobar este documento?'))) return;
 
   setButtonLoading(triggerButton, true, 'Aprobando');
 
@@ -920,7 +922,7 @@ async function aprobarDocumento(triggerButton = null) {
 
 async function finalizarDocumento(triggerButton = null) {
   if (!documentoActual) return;
-  if (!confirm('¿Finalizar documento? Se asignará consecutivo y se intentará generar PDF final.')) return;
+  if (!(await ui.confirm('¿Finalizar documento? Se asignará consecutivo y se intentará generar PDF final.'))) return;
 
   setButtonLoading(triggerButton, true, 'Finalizando');
 
@@ -1047,7 +1049,7 @@ async function cargarCamposParaEditar(documento) {
     inicializarTinyMceEnContenedor(container);
   } catch (err) {
     console.error('Error al cargar campos editables', err);
-    alert('Error al cargar campos editables');
+    await ui.error('Error al cargar campos editables');
   }
 }
 

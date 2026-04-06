@@ -4,6 +4,7 @@
 })();
 
 let modalRol, modalCargo, modalUsuario, modalPlantilla, modalUploadPlantilla;
+const ui = window.ui;
 
 function showSection(section) {
   document.querySelectorAll('.section').forEach(s => s.classList.add('d-none'));
@@ -89,13 +90,14 @@ function bindRoleActions() {
 
   document.querySelectorAll('[data-del-rol]').forEach(btn => {
     btn.addEventListener('click', async () => {
-      if (!confirm('¿Eliminar rol?')) return;
+      if (!(await ui.confirm('¿Eliminar rol?'))) return;
       const id = btn.dataset.delRol;
       try {
         await api.request(`/roles/${id}`, { method: 'DELETE' });
+        await ui.success('Rol eliminado correctamente');
         loadRoles();
       } catch (err) {
-        alert(err.message);
+        await ui.error(err.message);
       }
     });
   });
@@ -114,7 +116,7 @@ function bindRoleStateSwitch() {
         // En caso de error, dejar el rol activo y alertar
         sw.checked = true;
         if (label) label.textContent = 'Activo';
-        alert(`No se pudo cambiar el estado del rol (ID ${id}). El rol permanece activo.\nDetalle: ${err.message}`);
+        await ui.error(`No se pudo cambiar el estado del rol (ID ${id}). El rol permanece activo. Detalle: ${err.message}`);
       }
     });
   });
@@ -197,13 +199,14 @@ function bindCargoActions() {
 
   document.querySelectorAll('[data-del-cargo]').forEach(btn => {
     btn.addEventListener('click', async () => {
-      if (!confirm('¿Eliminar cargo?')) return;
+      if (!(await ui.confirm('¿Eliminar cargo?'))) return;
       const id = btn.dataset.delCargo;
       try {
         await api.request(`/cargos/${id}`, { method: 'DELETE' });
+        await ui.success('Cargo eliminado correctamente');
         loadCargos();
       } catch (err) {
-        alert(err.message);
+        await ui.error(err.message);
       }
     });
   });
@@ -221,7 +224,7 @@ function bindCargoStateSwitch() {
       } catch (err) {
         sw.checked = true;
         if (label) label.textContent = 'Activo';
-        alert(`No se pudo cambiar el estado del cargo (ID ${id}). El cargo permanece activo.\nDetalle: ${err.message}`);
+        await ui.error(`No se pudo cambiar el estado del cargo (ID ${id}). El cargo permanece activo. Detalle: ${err.message}`);
       }
     });
   });
@@ -278,7 +281,6 @@ async function loadUsuarios() {
           </div>
         </td>
         <td class="text-end">
-          <button class="btn btn-sm btn-outline-warning me-1" data-pdf-usuario="${u.id_usuario}" title="Descargar PDF"><i class="bi bi-file-pdf"></i></button>
           <button class="btn btn-sm btn-outline-primary me-1" data-edit-usuario="${u.id_usuario}"><i class="bi bi-pencil"></i></button>
           <button class="btn btn-sm btn-outline-danger" data-del-usuario="${u.id_usuario}"><i class="bi bi-trash"></i></button>
         </td>
@@ -303,50 +305,23 @@ function bindUserStateSwitch() {
       } catch (err) {
         sw.checked = !sw.checked;
         if (label) label.textContent = sw.checked ? 'Activo' : 'Inactivo';
-        alert(`No se pudo cambiar el estado del usuario (ID ${id}).\nDetalle: ${err.message}`);
+        await ui.error(`No se pudo cambiar el estado del usuario (ID ${id}). Detalle: ${err.message}`);
       }
     });
   });
 }
 
 function bindUserActions() {
-  document.querySelectorAll('[data-pdf-usuario]').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const id = btn.dataset.pdfUsuario;
-      try {
-        btn.disabled = true;
-        btn.innerHTML = '<i class="bi bi-hourglass-split"></i>';
-        
-        // Endpoint Jasper eliminado
-        alert('Funcionalidad de PDF temporalmente deshabilitada');
-        return;
-        
-        // Descargar el PDF
-        if (respuesta.pdf_url) {
-          const link = document.createElement('a');
-          link.href = API_BASE + respuesta.pdf_url;
-          link.download = `usuario_${id}.pdf`;
-          link.click();
-          alert('PDF descargado correctamente');
-        }
-      } catch (err) {
-        alert(`Error generando PDF: ${err.message}`);
-      } finally {
-        btn.disabled = false;
-        btn.innerHTML = '<i class="bi bi-file-pdf"></i>';
-      }
-    });
-  });
-
   document.querySelectorAll('[data-del-usuario]').forEach(btn => {
     btn.addEventListener('click', async () => {
-      if (!confirm('¿Eliminar usuario?')) return;
+      if (!(await ui.confirm('¿Eliminar usuario?'))) return;
       const id = btn.dataset.delUsuario;
       try {
         await api.request(`/users/${id}`, { method: 'DELETE' });
+        await ui.success('Usuario eliminado correctamente');
         loadUsuarios();
       } catch (err) {
-        alert(err.message);
+        await ui.error(err.message);
       }
     });
   });
@@ -385,7 +360,7 @@ function bindUserActions() {
         document.getElementById('usuario-error').classList.add('d-none');
         modalUsuario.show();
       } catch (err) {
-        alert(`Error al cargar usuario: ${err.message}`);
+        await ui.error(`Error al cargar usuario: ${err.message}`);
       }
     });
   });
@@ -640,7 +615,7 @@ async function uploadPlantillaArchivo() {
     loadPlantillas();
 
     // Mostrar mensaje de éxito
-    alert('Archivo subido correctamente: ' + result.nombre_archivo);
+    await ui.success('Archivo subido correctamente: ' + result.nombre_archivo);
 
   } catch (err) {
     errBox.textContent = err.message;
@@ -696,13 +671,14 @@ function bindPlantillaActions() {
 
   document.querySelectorAll('[data-del-plantilla]').forEach(btn => {
     btn.addEventListener('click', async () => {
-      if (!confirm('¿Eliminar plantilla y su tabla de datos? Esta acción es irreversible.')) return;
+      if (!(await ui.confirm('¿Eliminar plantilla y su tabla de datos? Esta acción es irreversible.'))) return;
       const id = btn.dataset.delPlantilla;
       try {
         await api.request(`/plantillas/${id}`, { method: 'DELETE' });
+        await ui.success('Plantilla eliminada correctamente');
         loadPlantillas();
       } catch (err) {
-        alert(err.message);
+        await ui.error(err.message);
       }
     });
   });
@@ -742,7 +718,7 @@ function bindPlantillaActions() {
         document.getElementById('plantilla-error').classList.add('d-none');
         modalPlantilla.show();
       } catch (err) {
-        alert(`Error al cargar plantilla: ${err.message}`);
+        await ui.error(`Error al cargar plantilla: ${err.message}`);
       }
     });
   });
